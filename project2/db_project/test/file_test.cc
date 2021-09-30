@@ -4,19 +4,17 @@
 
 TEST(FileInitTest, HandlesInitialization) {
     int fd;
-    off_t filesize;
+    off_t fsize;
 
     fd = file_open_database_file("init_test.db");
     ASSERT_TRUE(fd >= 0);
-    filesize = lseek(fd, 0, SEEK_END);
+    fsize = lseek(fd, 0, SEEK_END);
     off_t num_pages = 2560;
-    EXPECT_EQ(num_pages, filesize / 4096)
+    EXPECT_EQ(num_pages, fsize / 4096)
       << "The initial number of pages does not match the requirement: "
       << num_pages;
-    
-    EXPECT_EQ(file_alloc_page(fd), 1);
-
     file_close_database_file();
+    EXPECT_EQ(close(fd), -1);
     int is_removed = remove("init_test.db");
     ASSERT_EQ(is_removed, 0);
 }
@@ -48,20 +46,21 @@ class FileTest : public ::testing::Test {
             }
         }
     int fd;
-    std::string pathname = "Filetest.db";
+    std::string pathname = "test1.db";
 };
 
 TEST_F(FileTest, HandlesPageAllocation) {
     pagenum_t allocated_page;
-    const int freepages = 100;
-    pagenum_t freepage_list[freepages];
+    int freepages = 100;
+    pagenum_t freepage_list[100];
 
     ASSERT_TRUE(fd>=0);
     allocated_page = file_alloc_page(fd);
+    ASSERT_NE(allocated_page, 0);
     
     for(int i=0; i<freepages; i++) {
         freepage_list[i] = file_alloc_page(fd);
-        ASSERT_TRUE(freepage_list[i]>0);
+        ASSERT_NE(freepage_list[i], 0);
     }
     for(int i=0; i<freepages; i++) {
         file_free_page(fd, freepage_list[i]);
@@ -75,30 +74,30 @@ TEST_F(FileTest, CheckReadWriteOperation) {
     page_t *dest, *src;
     pagenum_t src_num;
     ASSERT_TRUE(fd >= 0);
-    src_num = file_alloc_page(fd);
-    ASSERT_TRUE(src_num > 0);
-
     src = (page_t*)malloc(sizeof(page_t));
     ASSERT_TRUE(src!=NULL);
     for(int i=0; i<1000; i++) src->Reserved[i] = 'D';
     for(int i=1000; i<2000; i++) src->Reserved[i] = 'B';
     for(int i=2000; i<3000; i++) src->Reserved[i] = 'M';
     for(int i=3000; i<4096; i++) src->Reserved[i] = 'S';
-    
+    src_num = file_alloc_page(fd);
+    ASSERT_TRUE(src_num > 0);
     file_write_page(fd, src_num, src);
+    free(src);
+    src = NULL;
 
     dest = (page_t*)malloc(sizeof(page_t));
     ASSERT_TRUE(dest!=NULL);
     file_read_page(fd, src_num, dest);
-    for(int i=0; i<4096; i++) EXPECT_EQ(src->Reserved[i], dest->Reserved[i]);
-
+    for(int i=0; i<1000; i++) ASSERT_EQ(dest->Reserved[i],'D');
+    for(int i=1000; i<2000; i++) ASSERT_EQ(dest->Reserved[i],'B');
+    for(int i=2000; i<3000; i++) ASSERT_EQ(dest->Reserved[i],'M');
+    for(int i=3000; i<4096; i++) ASSERT_EQ(dest->Reserved[i],'S');
     free(dest);
     dest = NULL;
-    free(src);
-    src = NULL;
 }
 
-TEST_F(FileTest, Sizebecometwice) {
+TEST_F(FileTest, SizeBecomeTwice) {
     off_t firstsize, twicesize;
     ASSERT_TRUE(fd >= 0);
     firstsize = lseek(fd, 0, SEEK_END)/4096;

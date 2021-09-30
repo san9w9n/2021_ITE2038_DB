@@ -16,9 +16,12 @@ void make_free_pages(int fd, pagenum_t next, uint64_t lp, headerPg_t* headerPg);
 ssize_t header_page_rdwr(int fd, int write_else_read, headerPg_t* headerPg);
 ssize_t free_page_rdwr(int fd, freePg_t* freePg, pagenum_t pagenum, int write_else_read);
 
-int openedfiles = 0;
-int fd_array[FILENUMS];
+typedef struct Stack {
+    int fd;
+    struct Stack* next;
+} Stack;
 
+Stack* stack = NULL;
 
 int file_open_database_file(const char* path) {
     ssize_t check;
@@ -26,6 +29,25 @@ int file_open_database_file(const char* path) {
     if(fd<0) {
         perror("FILE OPEN FAILED!!\n");
         exit(EXIT_FAILURE);
+    }
+    if(!stack) {
+        stack = (Stack*)malloc(sizeof(Stack));
+        if(!stack) {
+            perror("ALLOCATED FAILED!!\n");
+            exit(EXIT_FAILURE);
+        }
+        stack->fd = fd;
+        stack->next = NULL;
+    } else {
+        Stack* newstack = (Stack*)malloc(sizeof(Stack));
+        if(!newstack) {
+            perror("ALLOCATED FAILED!!\n");
+            exit(EXIT_FAILURE);
+        }
+        newstack->fd = fd;
+        newstack->next = stack;
+
+        stack = newstack;
     }
 
     headerPg_t* headerPg = (headerPg_t*)malloc(sizeof(headerPg_t));
@@ -42,7 +64,6 @@ int file_open_database_file(const char* path) {
     }
     free(headerPg);
 
-    fd_array[openedfiles++] = fd;
     return fd;
 }
 
@@ -59,10 +80,11 @@ ssize_t header_page_rdwr(int fd, int write_else_read, headerPg_t* headerPg) {
             perror("HEADER WRITE FAILED!!\n");
             exit(EXIT_FAILURE);
         }
+        fsync(fd);
     } else {
         ret_flag = pread(fd, headerPg, PGSIZE, 0);
         if(ret_flag<0) {
-            perror("HEADER_READ FAILED!!\n");
+            perror("HEADER READ FAILED!!\n");
             exit(EXIT_FAILURE);
         }
     }
@@ -111,6 +133,7 @@ ssize_t free_page_rdwr(int fd, freePg_t* freePg, pagenum_t pagenum, int write_el
             perror("FREE_PAGE WRITE FAILED!!\n");
             exit(EXIT_FAILURE);
         }
+        fsync(fd);
     } else {
         ret_flag = pread(fd, freePg, PGSIZE, PGOFFSET(pagenum));
         if(ret_flag<0) {
@@ -119,7 +142,7 @@ ssize_t free_page_rdwr(int fd, freePg_t* freePg, pagenum_t pagenum, int write_el
         }
     }
     if(ret_flag==-1) {
-        perror("FREE_PAGE READ/WRITE FAILED!!\n");
+        perror("FREE PAGE READ/WRITE FAILED!!\n");
         exit(EXIT_FAILURE);
     }
     return ret_flag;
@@ -134,7 +157,10 @@ pagenum_t file_alloc_page(int fd) {
     
     headerPg_t* headerPg = (headerPg_t*)malloc(sizeof(headerPg_t));
 
-    header_page_rdwr(fd, READ, headerPg);
+    if(header_page_rdwr(fd, READ, headerPg)!=PGSIZE) {
+        perror("HEADER READ FAILED!!\n");
+        exit(EXIT_FAILURE);
+    }
     if(!headerPg->num_pages) {
         perror("NO HEADER PAGE!!\n");
         exit(EXIT_FAILURE);
@@ -149,7 +175,10 @@ pagenum_t file_alloc_page(int fd) {
     } else {
         freePg_t* freePg = (freePg_t*)malloc(sizeof(freePg_t));
         ret_page = headerPg->free_num;
-        free_page_rdwr(fd, freePg, headerPg->free_num, READ);
+        if(free_page_rdwr(fd, freePg, headerPg->free_num, READ)!=PGSIZE) {
+            perror("FREE PAGE READ FAILED!!\n");
+            exit(EXIT_FAILURE);
+        }
         headerPg->free_num = freePg->nextfree_num;
 
         free(freePg);
@@ -174,7 +203,10 @@ void file_free_page(int fd, pagenum_t pagenum) {
         perror("ALLOCATE FAILED!!\n");
         exit(EXIT_FAILURE);
     }
-    header_page_rdwr(fd, READ, headerPg);
+    if(header_page_rdwr(fd, READ, headerPg)!=PGSIZE) {
+        perror("HEADER READ FAILED!!\n");
+        exit(EXIT_FAILURE);
+    }
     if(!headerPg->num_pages) {
         perror("NO HEADER PAGE!!\n");
         exit(EXIT_FAILURE);
@@ -220,12 +252,19 @@ void file_write_page(int fd, pagenum_t pagenum, const page_t* src) {
             perror("FILE WRITE FAILED!!\n");
             exit(EXIT_FAILURE);
         }
+        fsync(fd);
     }
 }
 
 void file_close_database_file() {
-    for(int i=0; i<openedfiles; i++) {
-        close(fd_array[i]);
+    Stack* tmp;
+
+    while(stack) {
+        tmp = stack;
+        close(stack->fd);
+        stack = stack->next;
+        tmp->next = NULL;
+        free(tmp);
+        tmp = NULL;
     }
-    openedfiles = 0;
 }
