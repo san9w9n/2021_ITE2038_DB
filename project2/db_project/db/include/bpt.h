@@ -2,10 +2,6 @@
 #define __BPT_H__
 #include "file.h"
 
-// For debugging
-void printALL(int64_t table_id);
-void print_leaves(int64_t table_id);
-
 // API
 int64_t open_table(char *pathname);
 int db_find(int64_t table_id, int64_t key, char * ret_val, uint16_t * val_size);
