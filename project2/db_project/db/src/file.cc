@@ -1,8 +1,10 @@
 #include "file.h"
+
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #define READ 0
 #define WRITE 1
@@ -12,43 +14,57 @@
 #define PGNUM(X) ((X)/PGSIZE)
 #define PGOFFSET(X) ((X)*PGSIZE)
 
+
+int table_nums = 0;
+Table* table;
+
 void make_free_pages(int fd, pagenum_t next, uint64_t lp, headerPg_t* headerPg);
 ssize_t header_page_rdwr(int fd, int write_else_read, headerPg_t* headerPg);
 ssize_t free_page_rdwr(int fd, freePg_t* freePg, pagenum_t pagenum, int write_else_read);
+int find_duplicate_file(const char* path);
 
-typedef struct Stack {
-    int fd;
-    struct Stack* next;
-} Stack;
+int find_duplicate_file(const char* path) {
+    if(!table) return 0;
+    for(int i=0; i<table_nums; i++) {
+        if(!strcmp(table[i].filename, path)) return 1;
+    }
+    return 0;
+}
 
-Stack* stack = NULL;
+int isValid_table_id(int64_t table_id) {
+    if(!table || table_id<0 || table_id>=MAX_TABLES) return 0;
+    if(table[table_id].fd<0 || !table[table_id].filename) return 0;
+    return 1;
+}
 
-int file_open_database_file(const char* path) {
+int64_t file_open_table_file(const char* path) {
     ssize_t check;
+    int64_t table_id;
+    if(table_nums>=MAX_TABLES || find_duplicate_file(path)) return -1;
     int fd = open(path, O_RDWR|O_SYNC|O_CREAT, 0777);
-    if(fd<0) {
-        perror("FILE OPEN FAILED!!\n");
-        exit(EXIT_FAILURE);
-    }
-    if(!stack) {
-        stack = (Stack*)malloc(sizeof(Stack));
-        if(!stack) {
-            perror("ALLOCATED FAILED!!\n");
-            exit(EXIT_FAILURE);
-        }
-        stack->fd = fd;
-        stack->next = NULL;
-    } else {
-        Stack* newstack = (Stack*)malloc(sizeof(Stack));
-        if(!newstack) {
-            perror("ALLOCATED FAILED!!\n");
-            exit(EXIT_FAILURE);
-        }
-        newstack->fd = fd;
-        newstack->next = stack;
+    if(fd<0) return -1;
 
-        stack = newstack;
+    if(!table) {
+        table = (Table*)malloc(sizeof(Table)*MAX_TABLES+1);
+        if(!table) {
+            perror("ALLOCATED FAILED!!\n");
+            exit(EXIT_FAILURE);
+        }
+        table[0].filename = (char*)malloc(strlen(path)+1);
+        if(!table[0].filename) {
+            perror("ALLOCATED FAILED!!\n");
+            exit(EXIT_FAILURE);
+        }
+        for(int i=0; i<MAX_TABLES; i++) table[0].fd = -1;
+        table_nums = 0;
+        table[0].fd = fd;
+        strcpy(table[0].filename, path);
+    } else {
+        table[table_nums].filename = (char*)malloc(strlen(path)+1);
+        table[table_nums].fd = fd;
+        strcpy(table[table_nums].filename, path);
     }
+    table_id = table_nums++;
 
     headerPg_t* headerPg = (headerPg_t*)malloc(sizeof(headerPg_t));
     check = header_page_rdwr(fd, READ, headerPg);
@@ -57,6 +73,7 @@ int file_open_database_file(const char* path) {
         pagenum_t nextfree;
         headerPg->num_pages = 1;
         headerPg->free_num = nextfree = 1;
+        headerPg->root_num = 0;
         uint64_t loop = 2560;
 
         make_free_pages(fd, nextfree, loop, headerPg);
@@ -64,7 +81,7 @@ int file_open_database_file(const char* path) {
     }
     free(headerPg);
 
-    return fd;
+    return table_id;
 }
 
 ssize_t header_page_rdwr(int fd, int write_else_read, headerPg_t* headerPg) {
@@ -148,13 +165,10 @@ ssize_t free_page_rdwr(int fd, freePg_t* freePg, pagenum_t pagenum, int write_el
     return ret_flag;
 }
 
-pagenum_t file_alloc_page(int fd) {
+pagenum_t file_alloc_page(int64_t table_id) {
     pagenum_t ret_page = 0;
-    if(fd<0) {
-        perror("FILE NOT OPENED!!\n");
-        exit(EXIT_FAILURE);
-    }
-    
+    int fd;
+    fd = table[table_id].fd;
     headerPg_t* headerPg = (headerPg_t*)malloc(sizeof(headerPg_t));
 
     if(header_page_rdwr(fd, READ, headerPg)!=PGSIZE) {
@@ -187,16 +201,28 @@ pagenum_t file_alloc_page(int fd) {
         perror("FILE ALLOC PAGE FAILED!!\n");
         exit(EXIT_FAILURE);
     }
+    
+    page_t* new_page = (page_t*)malloc(sizeof(page_t));
+    if(!new_page) {
+        perror("MALLOC FAILED!!\n");
+        exit(EXIT_FAILURE);
+    }
+    memset(new_page, 0x00, PGSIZE);
+    if(pwrite(fd, new_page, PGSIZE, PGOFFSET(ret_page))!=PGSIZE) {
+        perror("FILE WRITE FAILED");
+        exit(EXIT_FAILURE);
+    } fsync(fd);
+    
     header_page_rdwr(fd, WRITE, headerPg);
+    free(new_page);
     free(headerPg);
     return ret_page;
 }
 
-void file_free_page(int fd, pagenum_t pagenum) {
-    if(fd<0) {
-        perror("FILE NOT OPENED!!\n");
-        exit(EXIT_FAILURE);
-    }
+void file_free_page(int64_t table_id, pagenum_t pagenum) {
+    int fd;
+    fd = table[table_id].fd;
+
     headerPg_t* headerPg = (headerPg_t*)malloc(sizeof(headerPg_t));
     freePg_t* freePg = (freePg_t*)malloc(sizeof(freePg_t));
     if(!freePg) {
@@ -221,11 +247,10 @@ void file_free_page(int fd, pagenum_t pagenum) {
     free(headerPg);
 }
 
-void file_read_page(int fd, pagenum_t pagenum, page_t* dest) {
-    if(fd<0) {
-        perror("FILE NOT OPENED!!\n");
-        exit(EXIT_FAILURE);
-    }
+void file_read_page(int64_t table_id, pagenum_t pagenum, page_t* dest) {
+    int fd;
+    fd = table[table_id].fd;
+
     if(!dest) {
         perror("NULL ACCESSED!!(AT FILE_READ_PAGE)\n");
         exit(EXIT_FAILURE);
@@ -238,11 +263,10 @@ void file_read_page(int fd, pagenum_t pagenum, page_t* dest) {
     }
 }
 
-void file_write_page(int fd, pagenum_t pagenum, const page_t* src) {
-    if(fd<0) {
-        perror("FILE NOT OPENED!!\n");
-        exit(EXIT_FAILURE);
-    }
+void file_write_page(int64_t table_id, pagenum_t pagenum, const page_t* src) {
+    int fd;
+    fd = table[table_id].fd;
+
     if(!src) {
         perror("NULL ACCESSED!!(AT FILE_WRITE_PAGE)\n");
         exit(EXIT_FAILURE);
@@ -256,15 +280,36 @@ void file_write_page(int fd, pagenum_t pagenum, const page_t* src) {
     }
 }
 
-void file_close_database_file() {
-    Stack* tmp;
+pagenum_t get_rootnum(int64_t table_id) {
+    pagenum_t root_num;
+    int fd;
+    fd = table[table_id].fd;
 
-    while(stack) {
-        tmp = stack;
-        close(stack->fd);
-        stack = stack->next;
-        tmp->next = NULL;
-        free(tmp);
-        tmp = NULL;
+    headerPg_t* headerPg = (headerPg_t*)malloc(sizeof(headerPg_t));
+    header_page_rdwr(fd, READ, headerPg);
+    root_num = headerPg->root_num;
+
+    free(headerPg);
+    return root_num;
+}
+
+void set_rootnum(int64_t table_id, pagenum_t root_num) {
+    int fd;
+    fd = table[table_id].fd;
+
+    headerPg_t* headerPg = (headerPg_t*)malloc(sizeof(headerPg_t));
+    header_page_rdwr(fd, READ, headerPg);
+    headerPg->root_num = root_num;
+    header_page_rdwr(fd, WRITE, headerPg);
+
+    free(headerPg);
+}
+
+void file_close_table_files() {
+    for(int i=0; i<table_nums; i++) {
+        free(table[i].filename);
+        close(table[i].fd);
     }
+    free(table);
+    table_nums = 0;
 }

@@ -1,1234 +1,931 @@
-/*
- *  bpt.c  
- */
-#define Version "1.14"
-/*
- *
- *  bpt:  B+ Tree Implementation
- *  Copyright (C) 2010-2016  Amittai Aviram  http://www.amittai.com
- *  All rights reserved.
- *  Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions are met:
- *
- *  1. Redistributions of source code must retain the above copyright notice, 
- *  this list of conditions and the following disclaimer.
- *
- *  2. Redistributions in binary form must reproduce the above copyright notice, 
- *  this list of conditions and the following disclaimer in the documentation 
- *  and/or other materials provided with the distribution.
- 
- *  3. Neither the name of the copyright holder nor the names of its 
- *  contributors may be used to endorse or promote products derived from this 
- *  software without specific prior written permission.
- 
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
- *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE 
- *  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE 
- *  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
- *  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF 
- *  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
- *  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
- *  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
- *  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE 
- *  POSSIBILITY OF SUCH DAMAGE.
- 
- *  Author:  Amittai Aviram 
- *    http://www.amittai.com
- *    amittai.aviram@gmail.edu or afa13@columbia.edu
- *  Original Date:  26 June 2010
- *  Last modified: 17 June 2016
- *
- *  This implementation demonstrates the B+ tree data structure
- *  for educational purposes, includin insertion, deletion, search, and display
- *  of the search path, the leaves, or the whole tree.
- *  
- *  Must be compiled with a C99-compliant C compiler such as the latest GCC.
- *
- *  Usage:  bpt [order]
- *  where order is an optional argument
- *  (integer MIN_ORDER <= order <= MAX_ORDER)
- *  defined as the maximal number of pointers in any node.
- *
- */
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "bpt.h"
 
-// GLOBALS.
+#define INITIAL_FREE 3968
+#define THRESHOLD 2500
+#define MAX_ORDER 249
+#define PGSIZE 4096
 
-/* The order determines the maximum and minimum
- * number of entries (keys and pointers) in any
- * node.  Every node has at most order - 1 keys and
- * at least (roughly speaking) half that number.
- * Every leaf has as many pointers to data as keys,
- * and every internal node has one more pointer
- * to a subtree than the number of keys.
- * This global variable is initialized to the
- * default value.
- */
-int order = DEFAULT_ORDER;
+// for debugging
+#if 1
+    #include <bits/stdc++.h>
+    using namespace std;
 
-/* The queue is used to print the tree in
- * level order, starting from the root
- * printing each entire rank on a separate
- * line, finishing with the leaves.
- */
-node * queue = NULL;
+    queue<pagenum_t> Q;
 
-/* The user can toggle on and off the "verbose"
- * property, which causes the pointer addresses
- * to be printed out in hexadecimal notation
- * next to their corresponding keys.
- */
-bool verbose_output = false;
+    void printALL(int64_t table_id) {
+        pagenum_t root_num = get_rootnum(table_id);
+        
+        Q.push(root_num);
+        int size = 1;
 
-
-// FUNCTION DEFINITIONS.
-
-// OUTPUT AND UTILITIES
-
-/* Copyright and license notice to user at startup. 
- */
-void license_notice( void ) {
-    printf("bpt version %s -- Copyright (C) 2010  Amittai Aviram "
-            "http://www.amittai.com\n", Version);
-    printf("This program comes with ABSOLUTELY NO WARRANTY; for details "
-            "type `show w'.\n"
-            "This is free software, and you are welcome to redistribute it\n"
-            "under certain conditions; type `show c' for details.\n\n");
-}
-
-
-/* Routine to print portion of GPL license to stdout.
- */
-void print_license( int license_part ) {
-    int start, end, line;
-    FILE * fp;
-    char buffer[0x100];
-
-    switch(license_part) {
-    case LICENSE_WARRANTEE:
-        start = LICENSE_WARRANTEE_START;
-        end = LICENSE_WARRANTEE_END;
-        break;
-    case LICENSE_CONDITIONS:
-        start = LICENSE_CONDITIONS_START;
-        end = LICENSE_CONDITIONS_END;
-        break;
-    default:
-        return;
-    }
-
-    fp = fopen(LICENSE_FILE, "r");
-    if (fp == NULL) {
-        perror("print_license: fopen");
-        exit(EXIT_FAILURE);
-    }
-    for (line = 0; line < start; line++)
-        fgets(buffer, sizeof(buffer), fp);
-    for ( ; line < end; line++) {
-        fgets(buffer, sizeof(buffer), fp);
-        printf("%s", buffer);
-    }
-    fclose(fp);
-}
-
-
-/* First message to the user.
- */
-void usage_1( void ) {
-    printf("B+ Tree of Order %d.\n", order);
-    printf("Following Silberschatz, Korth, Sidarshan, Database Concepts, "
-           "5th ed.\n\n"
-           "To build a B+ tree of a different order, start again and enter "
-           "the order\n"
-           "as an integer argument:  bpt <order>  ");
-    printf("(%d <= order <= %d).\n", MIN_ORDER, MAX_ORDER);
-    printf("To start with input from a file of newline-delimited integers, \n"
-           "start again and enter the order followed by the filename:\n"
-           "bpt <order> <inputfile> .\n");
-}
-
-
-/* Second message to the user.
- */
-void usage_2( void ) {
-    printf("Enter any of the following commands after the prompt > :\n"
-    "\ti <k>  -- Insert <k> (an integer) as both key and value).\n"
-    "\tf <k>  -- Find the value under key <k>.\n"
-    "\tp <k> -- Print the path from the root to key k and its associated "
-           "value.\n"
-    "\tr <k1> <k2> -- Print the keys and values found in the range "
-            "[<k1>, <k2>\n"
-    "\td <k>  -- Delete key <k> and its associated value.\n"
-    "\tx -- Destroy the whole tree.  Start again with an empty tree of the "
-           "same order.\n"
-    "\tt -- Print the B+ tree.\n"
-    "\tl -- Print the keys of the leaves (bottom row of the tree).\n"
-    "\tv -- Toggle output of pointer addresses (\"verbose\") in tree and "
-           "leaves.\n"
-    "\tq -- Quit. (Or use Ctl-D.)\n"
-    "\t? -- Print this help message.\n");
-}
-
-
-/* Brief usage note.
- */
-void usage_3( void ) {
-    printf("Usage: ./bpt [<order>]\n");
-    printf("\twhere %d <= order <= %d .\n", MIN_ORDER, MAX_ORDER);
-}
-
-
-/* Helper function for printing the
- * tree out.  See print_tree.
- */
-void enqueue( node * new_node ) {
-    node * c;
-    if (queue == NULL) {
-        queue = new_node;
-        queue->next = NULL;
-    }
-    else {
-        c = queue;
-        while(c->next != NULL) {
-            c = c->next;
-        }
-        c->next = new_node;
-        new_node->next = NULL;
-    }
-}
-
-
-/* Helper function for printing the
- * tree out.  See print_tree.
- */
-node * dequeue( void ) {
-    node * n = queue;
-    queue = queue->next;
-    n->next = NULL;
-    return n;
-}
-
-
-/* Prints the bottom row of keys
- * of the tree (with their respective
- * pointers, if the verbose_output flag is set.
- */
-void print_leaves( node * root ) {
-    int i;
-    node * c = root;
-    if (root == NULL) {
-        printf("Empty tree.\n");
-        return;
-    }
-    while (!c->is_leaf)
-        c = (node *)c->pointers[0];
-    while (true) {
-        for (i = 0; i < c->num_keys; i++) {
-            if (verbose_output)
-                printf("%lx ", (unsigned long)c->pointers[i]);
-            printf("%d ", c->keys[i]);
-        }
-        if (verbose_output)
-            printf("%lx ", (unsigned long)c->pointers[order - 1]);
-        if (c->pointers[order - 1] != NULL) {
-            printf(" | ");
-            c = (node *)c->pointers[order - 1];
-        }
-        else
-            break;
-    }
-    printf("\n");
-}
-
-
-/* Utility function to give the height
- * of the tree, which length in number of edges
- * of the path from the root to any leaf.
- */
-int height( node * root ) {
-    int h = 0;
-    node * c = root;
-    while (!c->is_leaf) {
-        c = (node *)c->pointers[0];
-        h++;
-    }
-    return h;
-}
-
-
-/* Utility function to give the length in edges
- * of the path from any node to the root.
- */
-int path_to_root( node * root, node * child ) {
-    int length = 0;
-    node * c = child;
-    while (c != root) {
-        c = c->parent;
-        length++;
-    }
-    return length;
-}
-
-
-/* Prints the B+ tree in the command
- * line in level (rank) order, with the 
- * keys in each node and the '|' symbol
- * to separate nodes.
- * With the verbose_output flag set.
- * the values of the pointers corresponding
- * to the keys also appear next to their respective
- * keys, in hexadecimal notation.
- */
-void print_tree( node * root ) {
-
-    node * n = NULL;
-    int i = 0;
-    int rank = 0;
-    int new_rank = 0;
-
-    if (root == NULL) {
-        printf("Empty tree.\n");
-        return;
-    }
-    queue = NULL;
-    enqueue(root);
-    while( queue != NULL ) {
-        n = dequeue();
-        if (n->parent != NULL && n == n->parent->pointers[0]) {
-            new_rank = path_to_root( root, n );
-            if (new_rank != rank) {
-                rank = new_rank;
-                printf("\n");
+        page_t* page = (page_t*)malloc(sizeof(page_t));
+        while(!Q.empty()) {
+            pagenum_t tmp = Q.front(); Q.pop();
+            
+            file_read_page(table_id, tmp, page);
+            
+            if(page->info.isLeaf) {
+                for(int i=0; i<page->info.num_keys; i++) {
+                    cout << page->leafbody.slot[i].key << ' ';
+                }
+                cout << "| ";
+            } else {
+                Q.push(page->leftmost);
+                for(int i=0; i<page->info.num_keys; i++) {
+                    cout << page->branch[i].key << ' ';
+                    Q.push(page->branch[i].pagenum);
+                }
+                cout << "| ";
+            }
+            size--;
+            if(!size) {
+                cout << '\n';
+                size = Q.size();
             }
         }
-        if (verbose_output) 
-            printf("(%lx)", (unsigned long)n);
-        for (i = 0; i < n->num_keys; i++) {
-            if (verbose_output)
-                printf("%lx ", (unsigned long)n->pointers[i]);
-            printf("%d ", n->keys[i]);
-        }
-        if (!n->is_leaf)
-            for (i = 0; i <= n->num_keys; i++)
-                enqueue((node *)n->pointers[i]);
-        if (verbose_output) {
-            if (n->is_leaf) 
-                printf("%lx ", (unsigned long)n->pointers[order - 1]);
-            else
-                printf("%lx ", (unsigned long)n->pointers[n->num_keys]);
-        }
-        printf("| ");
-    }
-    printf("\n");
-}
-
-
-/* Finds the record under a given key and prints an
- * appropriate message to stdout.
- */
-void find_and_print(node * root, int key, bool verbose) {
-    record * r = find(root, key, verbose);
-    if (r == NULL)
-        printf("Record not found under key %d.\n", key);
-    else 
-        printf("Record at %lx -- key %d, value %d.\n",
-                (unsigned long)r, key, r->value);
-}
-
-
-/* Finds and prints the keys, pointers, and values within a range
- * of keys between key_start and key_end, including both bounds.
- */
-void find_and_print_range( node * root, int key_start, int key_end,
-        bool verbose ) {
-    int i;
-    int array_size = key_end - key_start + 1;
-    int returned_keys[array_size];
-    void * returned_pointers[array_size];
-    int num_found = find_range( root, key_start, key_end, verbose,
-            returned_keys, returned_pointers );
-    if (!num_found)
-        printf("None found.\n");
-    else {
-        for (i = 0; i < num_found; i++)
-            printf("Key: %d   Location: %lx  Value: %d\n",
-                    returned_keys[i],
-                    (unsigned long)returned_pointers[i],
-                    ((record *)
-                     returned_pointers[i])->value);
-    }
-}
-
-
-/* Finds keys and their pointers, if present, in the range specified
- * by key_start and key_end, inclusive.  Places these in the arrays
- * returned_keys and returned_pointers, and returns the number of
- * entries found.
- */
-int find_range( node * root, int key_start, int key_end, bool verbose,
-        int returned_keys[], void * returned_pointers[]) {
-    int i, num_found;
-    num_found = 0;
-    node * n = find_leaf( root, key_start, verbose );
-    if (n == NULL) return 0;
-    for (i = 0; i < n->num_keys && n->keys[i] < key_start; i++) ;
-    if (i == n->num_keys) return 0;
-    while (n != NULL) {
-        for ( ; i < n->num_keys && n->keys[i] <= key_end; i++) {
-            returned_keys[num_found] = n->keys[i];
-            returned_pointers[num_found] = n->pointers[i];
-            num_found++;
-        }
-        n = (node *)n->pointers[order - 1];
-        i = 0;
-    }
-    return num_found;
-}
-
-
-/* Traces the path from the root to a leaf, searching
- * by key.  Displays information about the path
- * if the verbose flag is set.
- * Returns the leaf containing the given key.
- */
-node * find_leaf( node * root, int key, bool verbose ) {
-    int i = 0;
-    node * c = root;
-    if (c == NULL) {
-        if (verbose) 
-            printf("Empty tree.\n");
-        return c;
-    }
-    while (!c->is_leaf) {
-        if (verbose) {
-            printf("[");
-            for (i = 0; i < c->num_keys - 1; i++)
-                printf("%d ", c->keys[i]);
-            printf("%d] ", c->keys[i]);
-        }
-        i = 0;
-        while (i < c->num_keys) {
-            if (key >= c->keys[i]) i++;
-            else break;
-        }
-        if (verbose)
-            printf("%d ->\n", i);
-        c = (node *)c->pointers[i];
-    }
-    if (verbose) {
-        printf("Leaf [");
-        for (i = 0; i < c->num_keys - 1; i++)
-            printf("%d ", c->keys[i]);
-        printf("%d] ->\n", c->keys[i]);
-    }
-    return c;
-}
-
-
-/* Finds and returns the record to which
- * a key refers.
- */
-record * find( node * root, int key, bool verbose ) {
-    int i = 0;
-    node * c = find_leaf( root, key, verbose );
-    if (c == NULL) return NULL;
-    for (i = 0; i < c->num_keys; i++)
-        if (c->keys[i] == key) break;
-    if (i == c->num_keys) 
-        return NULL;
-    else
-        return (record *)c->pointers[i];
-}
-
-/* Finds the appropriate place to
- * split a node that is too big into two.
- */
-int cut( int length ) {
-    if (length % 2 == 0)
-        return length/2;
-    else
-        return length/2 + 1;
-}
-
-
-// INSERTION
-
-/* Creates a new record to hold the value
- * to which a key refers.
- */
-record * make_record(int value) {
-    record * new_record = (record *)malloc(sizeof(record));
-    if (new_record == NULL) {
-        perror("Record creation.");
-        exit(EXIT_FAILURE);
-    }
-    else {
-        new_record->value = value;
-    }
-    return new_record;
-}
-
-
-/* Creates a new general node, which can be adapted
- * to serve as either a leaf or an internal node.
- */
-node * make_node( void ) {
-    node * new_node;
-    new_node = (node *)malloc(sizeof(node));
-    if (new_node == NULL) {
-        perror("Node creation.");
-        exit(EXIT_FAILURE);
-    }
-    new_node->keys = (int *)malloc( (order - 1) * sizeof(int) );
-    if (new_node->keys == NULL) {
-        perror("New node keys array.");
-        exit(EXIT_FAILURE);
-    }
-    new_node->pointers = (void **)malloc( order * sizeof(void *) );
-    if (new_node->pointers == NULL) {
-        perror("New node pointers array.");
-        exit(EXIT_FAILURE);
-    }
-    new_node->is_leaf = false;
-    new_node->num_keys = 0;
-    new_node->parent = NULL;
-    new_node->next = NULL;
-    return new_node;
-}
-
-/* Creates a new leaf by creating a node
- * and then adapting it appropriately.
- */
-node * make_leaf( void ) {
-    node * leaf = make_node();
-    leaf->is_leaf = true;
-    return leaf;
-}
-
-
-/* Helper function used in insert_into_parent
- * to find the index of the parent's pointer to 
- * the node to the left of the key to be inserted.
- */
-int get_left_index(node * parent, node * left) {
-
-    int left_index = 0;
-    while (left_index <= parent->num_keys && 
-            parent->pointers[left_index] != left)
-        left_index++;
-    return left_index;
-}
-
-/* Inserts a new pointer to a record and its corresponding
- * key into a leaf.
- * Returns the altered leaf.
- */
-node * insert_into_leaf( node * leaf, int key, record * pointer ) {
-
-    int i, insertion_point;
-
-    insertion_point = 0;
-    while (insertion_point < leaf->num_keys && leaf->keys[insertion_point] < key)
-        insertion_point++;
-
-    for (i = leaf->num_keys; i > insertion_point; i--) {
-        leaf->keys[i] = leaf->keys[i - 1];
-        leaf->pointers[i] = leaf->pointers[i - 1];
-    }
-    leaf->keys[insertion_point] = key;
-    leaf->pointers[insertion_point] = pointer;
-    leaf->num_keys++;
-    return leaf;
-}
-
-
-/* Inserts a new key and pointer
- * to a new record into a leaf so as to exceed
- * the tree's order, causing the leaf to be split
- * in half.
- */
-node * insert_into_leaf_after_splitting(node * root, node * leaf, int key, record * pointer) {
-
-    node * new_leaf;
-    int * temp_keys;
-    void ** temp_pointers;
-    int insertion_index, split, new_key, i, j;
-
-    new_leaf = make_leaf();
-
-    temp_keys = (int *)malloc( order * sizeof(int) );
-    if (temp_keys == NULL) {
-        perror("Temporary keys array.");
-        exit(EXIT_FAILURE);
+        free(page);
     }
 
-    temp_pointers = (void **)malloc( order * sizeof(void *) );
-    if (temp_pointers == NULL) {
-        perror("Temporary pointers array.");
-        exit(EXIT_FAILURE);
-    }
+    void print_leaves(int64_t table_id) {
+        pagenum_t root_num = get_rootnum(table_id);
 
-    insertion_index = 0;
-    while (insertion_index < order - 1 && leaf->keys[insertion_index] < key)
-        insertion_index++;
+        page_t* page = (page_t*)malloc(sizeof(page_t));
+        file_read_page(table_id, root_num, page);
 
-    for (i = 0, j = 0; i < leaf->num_keys; i++, j++) {
-        if (j == insertion_index) j++;
-        temp_keys[j] = leaf->keys[i];
-        temp_pointers[j] = leaf->pointers[i];
-    }
-
-    temp_keys[insertion_index] = key;
-    temp_pointers[insertion_index] = pointer;
-
-    leaf->num_keys = 0;
-
-    split = cut(order - 1);
-
-    for (i = 0; i < split; i++) {
-        leaf->pointers[i] = temp_pointers[i];
-        leaf->keys[i] = temp_keys[i];
-        leaf->num_keys++;
-    }
-
-    for (i = split, j = 0; i < order; i++, j++) {
-        new_leaf->pointers[j] = temp_pointers[i];
-        new_leaf->keys[j] = temp_keys[i];
-        new_leaf->num_keys++;
-    }
-
-    free(temp_pointers);
-    free(temp_keys);
-
-    new_leaf->pointers[order - 1] = leaf->pointers[order - 1];
-    leaf->pointers[order - 1] = new_leaf;
-
-    for (i = leaf->num_keys; i < order - 1; i++)
-        leaf->pointers[i] = NULL;
-    for (i = new_leaf->num_keys; i < order - 1; i++)
-        new_leaf->pointers[i] = NULL;
-
-    new_leaf->parent = leaf->parent;
-    new_key = new_leaf->keys[0];
-
-    return insert_into_parent(root, leaf, new_key, new_leaf);
-}
-
-
-/* Inserts a new key and pointer to a node
- * into a node into which these can fit
- * without violating the B+ tree properties.
- */
-node * insert_into_node(node * root, node * n, 
-        int left_index, int key, node * right) {
-    int i;
-
-    for (i = n->num_keys; i > left_index; i--) {
-        n->pointers[i + 1] = n->pointers[i];
-        n->keys[i] = n->keys[i - 1];
-    }
-    n->pointers[left_index + 1] = right;
-    n->keys[left_index] = key;
-    n->num_keys++;
-    return root;
-}
-
-
-/* Inserts a new key and pointer to a node
- * into a node, causing the node's size to exceed
- * the order, and causing the node to split into two.
- */
-node * insert_into_node_after_splitting(node * root, node * old_node, int left_index, 
-        int key, node * right) {
-
-    int i, j, split, k_prime;
-    node * new_node, * child;
-    int * temp_keys;
-    node ** temp_pointers;
-
-    /* First create a temporary set of keys and pointers
-     * to hold everything in order, including
-     * the new key and pointer, inserted in their
-     * correct places. 
-     * Then create a new node and copy half of the 
-     * keys and pointers to the old node and
-     * the other half to the new.
-     */
-
-    temp_pointers = (node **)malloc( (order + 1) * sizeof(node *) );
-    if (temp_pointers == NULL) {
-        perror("Temporary pointers array for splitting nodes.");
-        exit(EXIT_FAILURE);
-    }
-    temp_keys = (int *)malloc( order * sizeof(int) );
-    if (temp_keys == NULL) {
-        perror("Temporary keys array for splitting nodes.");
-        exit(EXIT_FAILURE);
-    }
-
-    for (i = 0, j = 0; i < old_node->num_keys + 1; i++, j++) {
-        if (j == left_index + 1) j++;
-        temp_pointers[j] = (node *)old_node->pointers[i];
-    }
-
-    for (i = 0, j = 0; i < old_node->num_keys; i++, j++) {
-        if (j == left_index) j++;
-        temp_keys[j] = old_node->keys[i];
-    }
-
-    temp_pointers[left_index + 1] = right;
-    temp_keys[left_index] = key;
-
-    /* Create the new node and copy
-     * half the keys and pointers to the
-     * old and half to the new.
-     */  
-    split = cut(order);
-    new_node = make_node();
-    old_node->num_keys = 0;
-    for (i = 0; i < split - 1; i++) {
-        old_node->pointers[i] = temp_pointers[i];
-        old_node->keys[i] = temp_keys[i];
-        old_node->num_keys++;
-    }
-    old_node->pointers[i] = temp_pointers[i];
-    k_prime = temp_keys[split - 1];
-    for (++i, j = 0; i < order; i++, j++) {
-        new_node->pointers[j] = temp_pointers[i];
-        new_node->keys[j] = temp_keys[i];
-        new_node->num_keys++;
-    }
-    new_node->pointers[j] = temp_pointers[i];
-    free(temp_pointers);
-    free(temp_keys);
-    new_node->parent = old_node->parent;
-    for (i = 0; i <= new_node->num_keys; i++) {
-        child = (node *)new_node->pointers[i];
-        child->parent = new_node;
-    }
-
-    /* Insert a new key into the parent of the two
-     * nodes resulting from the split, with
-     * the old node to the left and the new to the right.
-     */
-
-    return insert_into_parent(root, old_node, k_prime, new_node);
-}
-
-
-
-/* Inserts a new node (leaf or internal node) into the B+ tree.
- * Returns the root of the tree after insertion.
- */
-node * insert_into_parent(node * root, node * left, int key, node * right) {
-
-    int left_index;
-    node * parent;
-
-    parent = left->parent;
-
-    /* Case: new root. */
-
-    if (parent == NULL)
-        return insert_into_new_root(left, key, right);
-
-    /* Case: leaf or node. (Remainder of
-     * function body.)  
-     */
-
-    /* Find the parent's pointer to the left 
-     * node.
-     */
-
-    left_index = get_left_index(parent, left);
-
-
-    /* Simple case: the new key fits into the node. 
-     */
-
-    if (parent->num_keys < order - 1)
-        return insert_into_node(root, parent, left_index, key, right);
-
-    /* Harder case:  split a node in order 
-     * to preserve the B+ tree properties.
-     */
-
-    return insert_into_node_after_splitting(root, parent, left_index, key, right);
-}
-
-
-/* Creates a new root for two subtrees
- * and inserts the appropriate key into
- * the new root.
- */
-node * insert_into_new_root(node * left, int key, node * right) {
-
-    node * root = make_node();
-    root->keys[0] = key;
-    root->pointers[0] = left;
-    root->pointers[1] = right;
-    root->num_keys++;
-    root->parent = NULL;
-    left->parent = root;
-    right->parent = root;
-    return root;
-}
-
-
-
-/* First insertion:
- * start a new tree.
- */
-node * start_new_tree(int key, record * pointer) {
-
-    node * root = make_leaf();
-    root->keys[0] = key;
-    root->pointers[0] = pointer;
-    root->pointers[order - 1] = NULL;
-    root->parent = NULL;
-    root->num_keys++;
-    return root;
-}
-
-
-
-/* Master insertion function.
- * Inserts a key and an associated value into
- * the B+ tree, causing the tree to be adjusted
- * however necessary to maintain the B+ tree
- * properties.
- */
-node * insert( node * root, int key, int value ) {
-
-    record * pointer;
-    node * leaf;
-
-    /* The current implementation ignores
-     * duplicates.
-     */
-
-    if (find(root, key, false) != NULL)
-        return root;
-
-    /* Create a new record for the
-     * value.
-     */
-    pointer = make_record(value);
-
-
-    /* Case: the tree does not exist yet.
-     * Start a new tree.
-     */
-
-    if (root == NULL) 
-        return start_new_tree(key, pointer);
-
-
-    /* Case: the tree already exists.
-     * (Rest of function body.)
-     */
-
-    leaf = find_leaf(root, key, false);
-
-    /* Case: leaf has room for key and pointer.
-     */
-
-    if (leaf->num_keys < order - 1) {
-        leaf = insert_into_leaf(leaf, key, pointer);
-        return root;
-    }
-
-
-    /* Case:  leaf must be split.
-     */
-
-    return insert_into_leaf_after_splitting(root, leaf, key, pointer);
-}
-
-
-
-
-// DELETION.
-
-/* Utility function for deletion.  Retrieves
- * the index of a node's nearest neighbor (sibling)
- * to the left if one exists.  If not (the node
- * is the leftmost child), returns -1 to signify
- * this special case.
- */
-int get_neighbor_index( node * n ) {
-
-    int i;
-
-    /* Return the index of the key to the left
-     * of the pointer in the parent pointing
-     * to n.  
-     * If n is the leftmost child, this means
-     * return -1.
-     */
-    for (i = 0; i <= n->parent->num_keys; i++)
-        if (n->parent->pointers[i] == n)
-            return i - 1;
-
-    // Error state.
-    printf("Search for nonexistent pointer to node in parent.\n");
-    printf("Node:  %#lx\n", (unsigned long)n);
-    exit(EXIT_FAILURE);
-}
-
-
-node * remove_entry_from_node(node * n, int key, node * pointer) {
-
-    int i, num_pointers;
-
-    // Remove the key and shift other keys accordingly.
-    i = 0;
-    while (n->keys[i] != key)
-        i++;
-    for (++i; i < n->num_keys; i++)
-        n->keys[i - 1] = n->keys[i];
-
-    // Remove the pointer and shift other pointers accordingly.
-    // First determine number of pointers.
-    num_pointers = n->is_leaf ? n->num_keys : n->num_keys + 1;
-    i = 0;
-    while (n->pointers[i] != pointer)
-        i++;
-    for (++i; i < num_pointers; i++)
-        n->pointers[i - 1] = n->pointers[i];
-
-
-    // One key fewer.
-    n->num_keys--;
-
-    // Set the other pointers to NULL for tidiness.
-    // A leaf uses the last pointer to point to the next leaf.
-    if (n->is_leaf)
-        for (i = n->num_keys; i < order - 1; i++)
-            n->pointers[i] = NULL;
-    else
-        for (i = n->num_keys + 1; i < order; i++)
-            n->pointers[i] = NULL;
-
-    return n;
-}
-
-
-node * adjust_root(node * root) {
-
-    node * new_root;
-
-    /* Case: nonempty root.
-     * Key and pointer have already been deleted,
-     * so nothing to be done.
-     */
-
-    if (root->num_keys > 0)
-        return root;
-
-    /* Case: empty root. 
-     */
-
-    // If it has a child, promote 
-    // the first (only) child
-    // as the new root.
-
-    if (!root->is_leaf) {
-        new_root = (node *)root->pointers[0];
-        new_root->parent = NULL;
-    }
-
-    // If it is a leaf (has no children),
-    // then the whole tree is empty.
-
-    else
-        new_root = NULL;
-
-    free(root->keys);
-    free(root->pointers);
-    free(root);
-
-    return new_root;
-}
-
-
-/* Coalesces a node that has become
- * too small after deletion
- * with a neighboring node that
- * can accept the additional entries
- * without exceeding the maximum.
- */
-node * coalesce_nodes(node * root, node * n, node * neighbor, int neighbor_index, int k_prime) {
-
-    int i, j, neighbor_insertion_index, n_end;
-    node * tmp;
-
-    /* Swap neighbor with node if node is on the
-     * extreme left and neighbor is to its right.
-     */
-
-    if (neighbor_index == -1) {
-        tmp = n;
-        n = neighbor;
-        neighbor = tmp;
-    }
-
-    /* Starting point in the neighbor for copying
-     * keys and pointers from n.
-     * Recall that n and neighbor have swapped places
-     * in the special case of n being a leftmost child.
-     */
-
-    neighbor_insertion_index = neighbor->num_keys;
-
-    /* Case:  nonleaf node.
-     * Append k_prime and the following pointer.
-     * Append all pointers and keys from the neighbor.
-     */
-
-    if (!n->is_leaf) {
-
-        /* Append k_prime.
-         */
-
-        neighbor->keys[neighbor_insertion_index] = k_prime;
-        neighbor->num_keys++;
-
-
-        n_end = n->num_keys;
-
-        for (i = neighbor_insertion_index + 1, j = 0; j < n_end; i++, j++) {
-            neighbor->keys[i] = n->keys[j];
-            neighbor->pointers[i] = n->pointers[j];
-            neighbor->num_keys++;
-            n->num_keys--;
+        while(!page->info.isLeaf) {
+            file_read_page(table_id, page->leftmost, page);
         }
 
-        /* The number of pointers is always
-         * one more than the number of keys.
-         */
+        while(1) {
+            cout << "leaf print!!\n";
+            int start = (12*page->info.num_keys) + page->freespace;
+            for(int i=start; i<3968; i++) {
+                if(page->leafbody.value[i]) cout << page->leafbody.value[i];
+                else cout << "O";
+            }
+            cout << "\n\n";
 
-        neighbor->pointers[i] = n->pointers[j];
-
-        /* All children must now point up to the same parent.
-         */
-
-        for (i = 0; i < neighbor->num_keys + 1; i++) {
-            tmp = (node *)neighbor->pointers[i];
-            tmp->parent = neighbor;
+            if(!page->Rsibling) break;
+            file_read_page(table_id, page->Rsibling, page);
         }
+        free(page);
     }
+#endif
 
-    /* In a leaf, append the keys and pointers of
-     * n to the neighbor.
-     * Set the neighbor's last pointer to point to
-     * what had been n's right neighbor.
-     */
 
-    else {
-        for (i = neighbor_insertion_index, j = 0; j < n->num_keys; i++, j++) {
-            neighbor->keys[i] = n->keys[j];
-            neighbor->pointers[i] = n->pointers[j];
-            neighbor->num_keys++;
-        }
-        neighbor->pointers[order - 1] = n->pointers[order - 1];
-    }
 
-    root = delete_entry(root, n->parent, k_prime, n);
-    free(n->keys);
-    free(n->pointers);
-    free(n); 
-    return root;
+int64_t open_table(char *pathname) {
+    return file_open_table_file(pathname);
 }
 
+int cut(int length) {
+    if(length%2==0) return length/2;
+    return length/2+1;
+}
 
-/* Redistributes entries between two nodes when
- * one has become too small after deletion
- * but its neighbor is too big to append the
- * small node's entries without exceeding the
- * maximum
- */
-node * redistribute_nodes(node * root, node * n, node * neighbor, int neighbor_index, 
-        int k_prime_index, int k_prime) {  
+void valueCopy(char* src, page_t* dest, int16_t size, int16_t offset) {
+    offset-=128;
+    if(offset<0) return;
 
-    int i;
-    node * tmp;
+    for(int i=offset; i<offset+size; i++) {
+        dest->leafbody.value[i] = src[i-offset];
+    }
+}
 
-    /* Case: n has a neighbor to the left. 
-     * Pull the neighbor's last key-pointer pair over
-     * from the neighbor's right end to n's left end.
-     */
+pagenum_t find_leaf(int64_t table_id, pagenum_t root_num, int64_t key) {
+    pagenum_t ret_num = root_num;
+    page_t* root = (page_t*)malloc(sizeof(page_t));
+    file_read_page(table_id, root_num, root);
 
-    if (neighbor_index != -1) {
-        if (!n->is_leaf)
-            n->pointers[n->num_keys + 1] = n->pointers[n->num_keys];
-        for (i = n->num_keys; i > 0; i--) {
-            n->keys[i] = n->keys[i - 1];
-            n->pointers[i] = n->pointers[i - 1];
-        }
-        if (!n->is_leaf) {
-            n->pointers[0] = neighbor->pointers[neighbor->num_keys];
-            tmp = (node *)n->pointers[0];
-            tmp->parent = n;
-            neighbor->pointers[neighbor->num_keys] = NULL;
-            n->keys[0] = k_prime;
-            n->parent->keys[k_prime_index] = neighbor->keys[neighbor->num_keys - 1];
-        }
+    while(!root->info.isLeaf) {
+        if(key<root->branch[0].key) ret_num = root->leftmost;
         else {
-            n->pointers[0] = neighbor->pointers[neighbor->num_keys - 1];
-            neighbor->pointers[neighbor->num_keys - 1] = NULL;
-            n->keys[0] = neighbor->keys[neighbor->num_keys - 1];
-            n->parent->keys[k_prime_index] = n->keys[0];
+            uint32_t i=0;
+            for(i=0; i<root->info.num_keys-1; i++) {
+                if(key<root->branch[i+1].key) break;
+            }
+            ret_num = root->branch[i].pagenum;
         }
+        file_read_page(table_id, ret_num, root);
     }
-
-    /* Case: n is the leftmost child.
-     * Take a key-pointer pair from the neighbor to the right.
-     * Move the neighbor's leftmost key-pointer pair
-     * to n's rightmost position.
-     */
-
-    else {  
-        if (n->is_leaf) {
-            n->keys[n->num_keys] = neighbor->keys[0];
-            n->pointers[n->num_keys] = neighbor->pointers[0];
-            n->parent->keys[k_prime_index] = neighbor->keys[1];
-        }
-        else {
-            n->keys[n->num_keys] = k_prime;
-            n->pointers[n->num_keys + 1] = neighbor->pointers[0];
-            tmp = (node *)n->pointers[n->num_keys + 1];
-            tmp->parent = n;
-            n->parent->keys[k_prime_index] = neighbor->keys[0];
-        }
-        for (i = 0; i < neighbor->num_keys - 1; i++) {
-            neighbor->keys[i] = neighbor->keys[i + 1];
-            neighbor->pointers[i] = neighbor->pointers[i + 1];
-        }
-        if (!n->is_leaf)
-            neighbor->pointers[i] = neighbor->pointers[i + 1];
-    }
-
-    /* n now has one more key and one more pointer;
-     * the neighbor has one fewer of each.
-     */
-
-    n->num_keys++;
-    neighbor->num_keys--;
-
-    return root;
-}
-
-
-/* Deletes an entry from the B+ tree.
- * Removes the record and its key and pointer
- * from the leaf, and then makes all appropriate
- * changes to preserve the B+ tree properties.
- */
-node * delete_entry( node * root, node * n, int key, void * pointer ) {
-
-    int min_keys;
-    node * neighbor;
-    int neighbor_index;
-    int k_prime_index, k_prime;
-    int capacity;
-
-    // Remove key and pointer from node.
-
-    n = remove_entry_from_node(n, key, (node *)pointer);
-
-    /* Case:  deletion from the root. 
-     */
-
-    if (n == root) 
-        return adjust_root(root);
-
-
-    /* Case:  deletion from a node below the root.
-     * (Rest of function body.)
-     */
-
-    /* Determine minimum allowable size of node,
-     * to be preserved after deletion.
-     */
-
-    min_keys = n->is_leaf ? cut(order - 1) : cut(order) - 1;
-
-    /* Case:  node stays at or above minimum.
-     * (The simple case.)
-     */
-
-    if (n->num_keys >= min_keys)
-        return root;
-
-    /* Case:  node falls below minimum.
-     * Either coalescence or redistribution
-     * is needed.
-     */
-
-    /* Find the appropriate neighbor node with which
-     * to coalesce.
-     * Also find the key (k_prime) in the parent
-     * between the pointer to node n and the pointer
-     * to the neighbor.
-     */
-
-    neighbor_index = get_neighbor_index( n );
-    k_prime_index = neighbor_index == -1 ? 0 : neighbor_index;
-    k_prime = n->parent->keys[k_prime_index];
-    neighbor = neighbor_index == -1 ? (node *)n->parent->pointers[1] : 
-        (node *)n->parent->pointers[neighbor_index];
-
-    capacity = n->is_leaf ? order : order - 1;
-
-    /* Coalescence. */
-
-    if (neighbor->num_keys + n->num_keys < capacity)
-        return coalesce_nodes(root, n, neighbor, neighbor_index, k_prime);
-
-    /* Redistribution. */
-
-    else
-        return redistribute_nodes(root, n, neighbor, neighbor_index, k_prime_index, k_prime);
-}
-
-
-
-/* Master deletion function.
- */
-node * db_delete(node * root, int key) {
-
-    node * key_leaf;
-    record * key_record;
-
-    key_record = find(root, key, false);
-    key_leaf = find_leaf(root, key, false);
-    if (key_record != NULL && key_leaf != NULL) {
-        root = delete_entry(root, key_leaf, key, key_record);
-        free(key_record);
-    }
-    return root;
-}
-
-
-void destroy_tree_nodes(node * root) {
-    int i;
-    if (root->is_leaf)
-        for (i = 0; i < root->num_keys; i++)
-            free(root->pointers[i]);
-    else
-        for (i = 0; i < root->num_keys + 1; i++)
-            destroy_tree_nodes((node *)root->pointers[i]);
-    free(root->pointers);
-    free(root->keys);
     free(root);
+    return ret_num;
+}
+
+int db_find(int64_t table_id, int64_t key, char * ret_val, uint16_t * val_size) {
+    page_t *leaf;
+    pagenum_t leaf_num, root_num;
+    if(!isValid_table_id(table_id)) return 1;
+
+    root_num = get_rootnum(table_id);
+    if(root_num==0) return 1;
+
+    leaf_num = find_leaf(table_id, root_num, key);
+    leaf = (page_t*)malloc(sizeof(page_t));
+    file_read_page(table_id, leaf_num,  leaf);
+
+    uint32_t i=0;
+    for(i=0; i<leaf->info.num_keys; i++) {
+        if(leaf->leafbody.slot[i].key == key) break;
+    }
+    if(i==leaf->info.num_keys) return 1;
+
+    *val_size = leaf->leafbody.slot[i].size;
+    for(uint16_t c=0; c<leaf->leafbody.slot[i].size; c++) {
+        ret_val[c] = leaf->leafbody.value[leaf->leafbody.slot[i].offset-128+c];
+    }
+
+    free(leaf);
+    return 0;
+}
+
+int insert_into_internal(int64_t table_id, uint32_t index, pagenum_t parent_num, page_t *parent, pagenum_t l_num, page_t* l, pagenum_t r_num, page_t* r, int64_t key) {
+
+    for(uint32_t i=parent->info.num_keys-1; i>=index; i--) {
+        parent->branch[i+1].key = parent->branch[i].key;
+        parent->branch[i+1].pagenum = parent->branch[i].pagenum;
+
+        if(i==0) break;
+    }
+    parent->branch[index].key = key;
+    parent->branch[index].pagenum = r_num;
+    parent->info.num_keys++;
+
+    l->info.parent_num = r->info.parent_num = parent_num;
+    file_write_page(table_id, parent_num, parent);
+    file_write_page(table_id, r_num, r);
+    file_write_page(table_id, l_num, l);
+    free(parent);
+    free(r);
+    free(l);
+
+    return 0;
+}
+
+int insert_into_internal_after_splitting(int64_t table_id, uint32_t index, pagenum_t parent_num, page_t *parent, pagenum_t r_num, int64_t key) {
+    uint32_t num_keys;
+    branch_t* tmp;
+    pagenum_t new_parent_num;
+    int64_t kprime;
+    page_t *new_parent;
+
+    tmp=(branch_t*)malloc(sizeof(branch_t) * 252);
+    if(!tmp) {
+        perror("MALLOC FAILED!!\n");
+        exit(EXIT_FAILURE);
+    }
+    num_keys = parent->info.num_keys + 1;
+    
+    int split = cut(MAX_ORDER)-1, ret=1;
+    for(uint32_t i=0, j=0; i<num_keys; i++, j++) {
+        if(j==index) j++;
+        tmp[j].key = parent->branch[i].key;
+        tmp[j].pagenum = parent->branch[i].pagenum;
+    }
+    tmp[index].key = key;
+    tmp[index].pagenum = r_num;
+
+    new_parent = (page_t*)malloc(sizeof(page_t));
+    if(!new_parent) {
+        perror("MALLOC FAILED!!\n");
+        exit(EXIT_FAILURE);
+    }
+    new_parent_num = file_alloc_page(table_id);
+    new_parent->info.parent_num = parent->info.parent_num;
+    new_parent->info.isLeaf = parent->info.isLeaf;
+    new_parent->info.num_keys = parent->info.num_keys = 0;
+
+    for(int i=0; i<split; i++) {
+        parent->branch[i].key = tmp[i].key;
+        parent->branch[i].pagenum = tmp[i].pagenum;
+        parent->info.num_keys++;
+    }
+
+    page_t* child = (page_t*)malloc(sizeof(page_t));
+    new_parent->leftmost = tmp[split].pagenum;
+    file_read_page(table_id, new_parent->leftmost, child);
+    child->info.parent_num = new_parent_num;
+    file_write_page(table_id, new_parent->leftmost, child);
+
+    for(uint32_t i=split+1, j=0; i<num_keys; i++, j++) {
+        new_parent->branch[j].key = tmp[i].key;
+        new_parent->branch[j].pagenum = tmp[i].pagenum;
+
+        file_read_page(table_id, tmp[i].pagenum, child);
+        child->info.parent_num = new_parent_num;
+        file_write_page(table_id, tmp[i].pagenum, child);
+
+        new_parent->info.num_keys++;
+    }
+
+    kprime = tmp[split].key;
+
+    free(child);
+    free(tmp);
+    return insert_into_parent(table_id, parent_num, parent, new_parent_num, new_parent, kprime);
+}
+
+int insert_into_parent(int64_t table_id, pagenum_t l_num, page_t* l, pagenum_t r_num, page_t* r, int64_t key) {
+    
+    if(l->info.parent_num==0) {
+        page_t *new_root;
+        pagenum_t new_root_num;
+
+        new_root = (page_t*)malloc(sizeof(page_t));
+        if(!new_root) {
+            perror("MALLOC FAILED!!\n");
+            exit(EXIT_FAILURE);
+        }
+        new_root_num = file_alloc_page(table_id);
+        l->info.parent_num = r->info.parent_num = new_root_num;
+        new_root->info.parent_num = 0;
+        new_root->info.isLeaf = 0;
+        new_root->info.num_keys = 1;
+        new_root->leftmost = l_num;
+        new_root->branch[0].key = key;
+        new_root->branch[0].pagenum = r_num;
+        file_write_page(table_id, new_root_num, new_root);
+        free(new_root);
+
+        set_rootnum(table_id, new_root_num);
+
+        l->info.parent_num = r->info.parent_num = new_root_num;
+        file_write_page(table_id, r_num, r);
+        file_write_page(table_id, l_num, l);
+        free(r);
+        free(l);
+        return 0;
+    }
+
+    page_t* parent = (page_t*)malloc(sizeof(page_t));
+    file_read_page(table_id, l->info.parent_num, parent);
+
+    uint32_t i;
+    for(i=0; i<parent->info.num_keys; i++) {
+        if(parent->branch[i].key>=key) break;
+    }
+    pagenum_t parent_num = l->info.parent_num;
+
+    if(parent->info.num_keys < MAX_ORDER - 1) return insert_into_internal(table_id, i, parent_num, parent, l_num, l, r_num, r, key);
+    file_write_page(table_id, r_num, r);
+    file_write_page(table_id, l_num, l);
+    free(r);
+    free(l);
+
+    return insert_into_internal_after_splitting(table_id, i, parent_num, parent, r_num, key);
+}
+
+int insert_into_leaf(int64_t table_id, uint32_t index, pagenum_t leaf_num, page_t* leaf, int64_t key, char * value, uint16_t val_size) {
+
+    if(leaf->info.num_keys>0) {
+        for(uint32_t i=leaf->info.num_keys-1; i>=index; i--) {
+            leaf->leafbody.slot[i+1].key = leaf->leafbody.slot[i].key;
+            leaf->leafbody.slot[i+1].offset = leaf->leafbody.slot[i].offset;
+            leaf->leafbody.slot[i+1].size = leaf->leafbody.slot[i].size;
+
+            if(i==0) break;
+        }
+    }
+    leaf->info.num_keys++;
+    leaf->freespace -= 12+val_size;
+    leaf->leafbody.slot[index].key = key;
+    leaf->leafbody.slot[index].offset = 128+(12*leaf->info.num_keys)+leaf->freespace;
+    leaf->leafbody.slot[index].size = val_size;
+    
+    valueCopy(value, leaf, val_size, leaf->leafbody.slot[index].offset);
+    file_write_page(table_id, leaf_num, leaf);
+
+    free(leaf);
+    return 0;
+}
+
+int insert_into_leaf_after_splitting(int64_t table_id, uint32_t index, pagenum_t leaf_num, page_t* leaf, int64_t key, char* value, uint16_t val_size) {
+    uint32_t totalspace = 0, offset = PGSIZE, split=0, num_keys = leaf->info.num_keys;
+    page_t *new_leaf, *old_leaf;
+    int ret = 1, flag = 0;
+    pagenum_t new_leaf_num;
+
+    for(split=0; split<leaf->info.num_keys; split++) {
+        if(split==index) {
+            totalspace+=12+val_size;
+            flag = 1;
+            if(totalspace>=INITIAL_FREE/2) {
+                flag = 0;
+                break;
+            }
+        } 
+        totalspace+=12+leaf->leafbody.slot[split].size;
+        if(totalspace>=INITIAL_FREE/2) {
+            break;
+        }
+    }
+
+    new_leaf = (page_t*)malloc(sizeof(page_t));
+    if(!new_leaf) {
+        perror("MALLOC FAILED!!\n");
+        exit(EXIT_FAILURE);
+    }
+    new_leaf_num = file_alloc_page(table_id);
+    new_leaf->info.parent_num = leaf->info.parent_num;
+    new_leaf->info.isLeaf = leaf->info.isLeaf;
+    new_leaf->info.num_keys = 0;
+    new_leaf->freespace = INITIAL_FREE;
+    new_leaf->Rsibling = leaf->Rsibling;
+
+    old_leaf = (page_t*)malloc(sizeof(page_t));
+    if(!old_leaf) {
+        perror("MALLOC FAILED!!\n");
+        exit(EXIT_FAILURE);
+    }
+    old_leaf->info.parent_num = leaf->info.parent_num;
+    old_leaf->info.isLeaf = leaf->info.isLeaf;
+    old_leaf->info.num_keys = 0;
+    old_leaf->freespace = INITIAL_FREE;
+    old_leaf->Rsibling = new_leaf_num;
+
+    if(!flag) {
+        uint32_t i=split, j=0;
+        for(i=split, j=0; i<num_keys; i++, j++) {
+            if(i==index) {
+                new_leaf->leafbody.slot[j].key = key;
+
+                if(j==0) new_leaf->leafbody.slot[j].offset = PGSIZE-val_size;
+                else new_leaf->leafbody.slot[j].offset = new_leaf->leafbody.slot[j-1].offset-val_size;
+    
+                new_leaf->leafbody.slot[j].size = val_size;
+                valueCopy(value, new_leaf, val_size, new_leaf->leafbody.slot[j].offset);
+                new_leaf->freespace -= 12+val_size;
+                new_leaf->info.num_keys++;
+                j++;
+            }
+            new_leaf->leafbody.slot[j].key = leaf->leafbody.slot[i].key;
+
+            if(j==0) new_leaf->leafbody.slot[j].offset = PGSIZE - leaf->leafbody.slot[i].size;
+            else new_leaf->leafbody.slot[j].offset = new_leaf->leafbody.slot[j-1].offset - leaf->leafbody.slot[i].size;
+
+            new_leaf->leafbody.slot[j].size = leaf->leafbody.slot[i].size;
+            for(int k=0; k<leaf->leafbody.slot[i].size; k++) {
+                new_leaf->leafbody.value[new_leaf->leafbody.slot[j].offset-128+k]
+                    = leaf->leafbody.value[leaf->leafbody.slot[i].offset-128+k];
+            }
+            new_leaf->freespace -= 12+leaf->leafbody.slot[i].size;
+            new_leaf->info.num_keys++;
+        }
+        if(index==num_keys) {
+            new_leaf->leafbody.slot[j].key = key;
+
+            if(j==0) new_leaf->leafbody.slot[j].offset = PGSIZE-val_size;
+            else new_leaf->leafbody.slot[j].offset = new_leaf->leafbody.slot[j-1].offset-val_size;
+
+            new_leaf->leafbody.slot[j].size = val_size;
+            valueCopy(value, new_leaf, val_size, new_leaf->leafbody.slot[j].offset);
+            new_leaf->freespace -= 12+val_size;
+            new_leaf->info.num_keys++;
+        }
+        for(i=0; i<split; i++) {
+            old_leaf->leafbody.slot[i].key = leaf->leafbody.slot[i].key;
+            old_leaf->leafbody.slot[i].size = leaf->leafbody.slot[i].size;
+
+            if(i==0) old_leaf->leafbody.slot[i].offset = PGSIZE - old_leaf->leafbody.slot[i].size;
+            else old_leaf->leafbody.slot[i].offset = old_leaf->leafbody.slot[i-1].offset - old_leaf->leafbody.slot[i].size;
+
+            for(int j=0; j<leaf->leafbody.slot[i].size; j++) {
+                old_leaf->leafbody.value[old_leaf->leafbody.slot[i].offset-128+j]
+                    = leaf->leafbody.value[leaf->leafbody.slot[i].offset-128+j];
+            }
+            old_leaf->freespace -= old_leaf->leafbody.slot[i].size+12;
+            old_leaf->info.num_keys++;
+        }
+    } else {
+        for(uint32_t i=split, j=0; i<num_keys; i++, j++) {
+            new_leaf->leafbody.slot[j].key = leaf->leafbody.slot[i].key;
+
+            if(j==0) new_leaf->leafbody.slot[j].offset = PGSIZE - leaf->leafbody.slot[i].size;
+            else new_leaf->leafbody.slot[j].offset = new_leaf->leafbody.slot[j-1].offset - leaf->leafbody.slot[i].size;
+
+            new_leaf->leafbody.slot[j].size = leaf->leafbody.slot[i].size;
+            for(int k=0; k<leaf->leafbody.slot[i].size; k++) {
+                new_leaf->leafbody.value[new_leaf->leafbody.slot[j].offset-128+k]
+                    = leaf->leafbody.value[leaf->leafbody.slot[i].offset-128+k];
+            }
+            new_leaf->freespace -= 12+leaf->leafbody.slot[i].size;
+            new_leaf->info.num_keys++;
+        }
+        for(uint32_t i=0, j=0; i<split; i++, j++) {
+            if(i==index) {
+                old_leaf->leafbody.slot[j].key = key;
+                old_leaf->leafbody.slot[j].size = val_size;
+
+                if(j==0) old_leaf->leafbody.slot[j].offset = PGSIZE - val_size;
+                else old_leaf->leafbody.slot[j].offset = old_leaf->leafbody.slot[j-1].offset - val_size;
+
+                valueCopy(value, old_leaf, val_size, old_leaf->leafbody.slot[j].offset);
+                old_leaf->freespace -= val_size+12;
+                old_leaf->info.num_keys++;
+                j++;
+            }
+            old_leaf->leafbody.slot[j].key = leaf->leafbody.slot[i].key;
+            old_leaf->leafbody.slot[j].size = leaf->leafbody.slot[i].size;
+
+            if(j==0) old_leaf->leafbody.slot[j].offset = PGSIZE - old_leaf->leafbody.slot[j].size;
+            else old_leaf->leafbody.slot[j].offset = old_leaf->leafbody.slot[j-1].offset - old_leaf->leafbody.slot[j].size;
+
+            for(int k=0; k<old_leaf->leafbody.slot[j].size; k++) {
+                old_leaf->leafbody.value[old_leaf->leafbody.slot[j].offset-128+k]
+                    = leaf->leafbody.value[leaf->leafbody.slot[i].offset-128+k];
+            }
+            old_leaf->freespace -= old_leaf->leafbody.slot[j].size+12;
+            old_leaf->info.num_keys++;
+        }
+        if(index==split) {
+            old_leaf->leafbody.slot[index].key = key;
+
+            if(index==0) old_leaf->leafbody.slot[index].offset = PGSIZE - val_size;
+            else old_leaf->leafbody.slot[index].offset = old_leaf->leafbody.slot[index-1].offset - val_size;
+
+            old_leaf->leafbody.slot[index].size = val_size;
+            valueCopy(value, old_leaf, val_size, old_leaf->leafbody.slot[index].offset);
+            old_leaf->freespace -= 12+val_size;
+            old_leaf->info.num_keys++;
+        }
+    }
+    free(leaf);
+    return insert_into_parent(table_id, leaf_num, old_leaf, new_leaf_num, new_leaf, new_leaf->leafbody.slot[0].key);
+}
+
+int start_new_tree(int64_t table_id, int64_t key, char * value, uint16_t val_size) {
+    pagenum_t new_root_num;
+    page_t *new_root;
+    
+    new_root = (page_t*)malloc(sizeof(page_t));
+    if(!new_root) {
+        perror("MALLOC FAILED!\n");
+        exit(EXIT_FAILURE);
+    }
+    new_root->info.parent_num = 0;
+    new_root->info.isLeaf = 1;
+    new_root->info.num_keys = 1;
+    new_root->freespace = INITIAL_FREE-(12+val_size);
+    new_root->Rsibling = 0;
+    new_root->leafbody.slot[0].key = key;
+    new_root->leafbody.slot[0].offset = PGSIZE-val_size;
+    new_root->leafbody.slot[0].size = val_size;
+    valueCopy(value, new_root, val_size, new_root->leafbody.slot[0].offset);
+
+    new_root_num = file_alloc_page(table_id);
+    file_write_page(table_id, new_root_num, new_root);
+    free(new_root);
+
+    set_rootnum(table_id, new_root_num);
+    return 0;
+}
+
+int db_insert(int64_t table_id, int64_t key, char * value, uint16_t val_size) {
+    int ret_num = 1;
+    pagenum_t root_num, leaf_num;
+    page_t *header, *leaf;
+    
+    if(!isValid_table_id(table_id)) return 1;
+
+    root_num = get_rootnum(table_id);
+
+    if(!root_num) return start_new_tree(table_id, key, value, val_size);
+
+    leaf_num = find_leaf(table_id, root_num, key);
+    leaf = (page_t*)malloc(sizeof(page_t));
+    file_read_page(table_id, leaf_num, leaf);
+
+    uint32_t i;
+    for(i=0; i<leaf->info.num_keys; i++) {
+        if(leaf->leafbody.slot[i].key == key) {
+            free(leaf);
+            return 1;
+        }
+        if(leaf->leafbody.slot[i].key > key) break;
+    }
+
+    if(leaf->freespace>=12+val_size) return insert_into_leaf(table_id, i, leaf_num, leaf, key, value, val_size);
+    return ret_num = insert_into_leaf_after_splitting(table_id, i, leaf_num, leaf, key, value, val_size);
 }
 
 
-node * destroy_tree(node * root) {
-    destroy_tree_nodes(root);
-    return NULL;
+// 삭제 시작
+int get_my_index(int64_t table_id, pagenum_t pagenum, page_t* page) {
+    page_t* parent;
+    int i;
+    pagenum_t sibling = 0;
+    parent = (page_t*)malloc(sizeof(page_t));
+    file_read_page(table_id, page->info.parent_num, parent);
+    
+    if(parent->leftmost==pagenum) {
+        free(parent);
+        return -1;
+    }
+    for(i=0; i<parent->info.num_keys; i++) {
+        if(parent->branch[i].pagenum == pagenum) {
+            free(parent);
+            return i;
+        }
+    }
+    free(parent);
+    return -2;
 }
 
+void compact_value(int64_t table_id, page_t* leaf) {
+    page_t* tmp = (page_t*)malloc(sizeof(page_t));
+    if(!tmp) {
+        perror("MALLOC FAILED!!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    for(int i=0; i<leaf->info.num_keys; i++) {
+        tmp->leafbody.slot[i].offset = (i==0) ? PGSIZE : tmp->leafbody.slot[i-1].offset;
+        tmp->leafbody.slot[i].offset -= leaf->leafbody.slot[i].size;
+        for(int j=0; j<leaf->leafbody.slot[i].size; j++) {
+            tmp->leafbody.value[tmp->leafbody.slot[i].offset-128+j]
+                = leaf->leafbody.value[leaf->leafbody.slot[i].offset-128+j];
+        }
+    }
+    for(int i=0; i<leaf->info.num_keys; i++) {
+        leaf->leafbody.slot[i].offset = tmp->leafbody.slot[i].offset;
+    }
+    
+    uint16_t startpoint = (12*leaf->info.num_keys) + leaf->freespace;
+    for(uint16_t i=startpoint; i<3968; i++) leaf->leafbody.value[i] = tmp->leafbody.value[i];
+
+    free(tmp);
+}
+
+
+void delete_leaf(int64_t table_id, uint32_t index, pagenum_t leaf_num, page_t* leaf, int64_t key) {
+    leaf->freespace += leaf->leafbody.slot[index].size+12;
+    for(uint32_t i=index; i<leaf->info.num_keys-1; i++) {
+        leaf->leafbody.slot[i].key = leaf->leafbody.slot[i+1].key;
+        leaf->leafbody.slot[i].size = leaf->leafbody.slot[i+1].size;
+        leaf->leafbody.slot[i].offset = leaf->leafbody.slot[i+1].offset;
+    }
+    leaf->info.num_keys--;
+    compact_value(table_id, leaf);
+}
+
+void delete_internal(int64_t table_id, uint32_t index, pagenum_t page_num, page_t* page, int64_t key) {
+    for(uint32_t i=index; i<page->info.num_keys-1; i++) {
+        page->branch[i].key = page->branch[i+1].key;
+        page->branch[i].pagenum = page->branch[i+1].pagenum;
+    }
+    page->info.num_keys--;
+}
+
+int adjust_root(int64_t table_id, pagenum_t root_num, page_t* root, int64_t key) {
+    uint32_t index;
+
+    if(root->info.isLeaf) {
+        for(index=0; index<root->info.num_keys; index++) {
+            if(root->leafbody.slot[index].key == key) break;
+        }
+        if(index==root->info.num_keys) {
+            free(root);
+            return 1;
+        }
+        delete_leaf(table_id, index, root_num, root, key);
+    } else {
+        for(index=0; index<root->info.num_keys; index++) {
+            if(root->branch[index].key == key) break;
+        }
+        if(index==root->info.num_keys) {
+            free(root);
+            return 1;
+        }
+        delete_internal(table_id, index, root_num, root, key);
+    }
+
+    if(!root->info.num_keys) {
+        if(root->info.isLeaf) {
+            set_rootnum(table_id, 0);
+        } else {
+            set_rootnum(table_id, root->leftmost);
+
+            page_t* new_root = (page_t*)malloc(sizeof(page_t));
+            file_read_page(table_id, root->leftmost, new_root);
+            new_root->info.parent_num = 0;
+            file_write_page(table_id, root->leftmost, new_root);
+            free(new_root);
+        }
+        file_free_page(table_id, root_num);
+    } else file_write_page(table_id, root_num, root);
+
+    free(root);
+    return 0;
+}
+
+int coalesce_leaf(int64_t table_id, int my_index, pagenum_t parent_num, page_t* parent, pagenum_t sibling_num, page_t* sibling, pagenum_t leaf_num, page_t* leaf) {
+    int k_prime_index;
+    for(uint32_t i=sibling->info.num_keys, j=0; j<leaf->info.num_keys; i++,j++) {
+        sibling->info.num_keys++;
+        sibling->freespace-= 12+leaf->leafbody.slot[j].size;
+
+        sibling->leafbody.slot[i].key = leaf->leafbody.slot[j].key;
+        sibling->leafbody.slot[i].size = leaf->leafbody.slot[j].size;
+        sibling->leafbody.slot[i].offset = 128+(12*sibling->info.num_keys)+sibling->freespace;
+        
+        for(uint16_t k=0; k<sibling->leafbody.slot[i].size; k++) {
+            sibling->leafbody.value[sibling->leafbody.slot[i].offset-128+k]
+                = leaf->leafbody.value[leaf->leafbody.slot[j].offset-128+k];
+        }
+    }
+    sibling->Rsibling = leaf->Rsibling;
+    file_free_page(table_id, leaf_num);
+    file_write_page(table_id, sibling_num, sibling);
+
+    free(sibling);
+    free(leaf);
+
+    k_prime_index = (my_index==-1) ? 0 : my_index;
+    return delete_entry(table_id, parent_num, parent, parent->branch[k_prime_index].key);
+}
+
+int redistribute_leaf(int64_t table_id, pagenum_t parent_num, page_t* parent, pagenum_t sibling_num, page_t* sibling, pagenum_t leaf_num, page_t* leaf, int my_index) {
+
+    if(my_index==-1) {
+        uint32_t num_keys;
+        uint64_t tmp_freespace = leaf->freespace, movenums = 0;
+        for(uint32_t i=0; i<sibling->info.num_keys; i++) {
+            tmp_freespace -= sibling->leafbody.slot[i].size;
+            movenums++;
+            if(tmp_freespace<THRESHOLD) break;
+        }
+        num_keys = leaf->info.num_keys;
+        for(uint32_t i=num_keys, j=0; j<movenums; i++, j++) {
+            leaf->freespace -= 12+sibling->leafbody.slot[j].size;
+            sibling->freespace += 12+sibling->leafbody.slot[j].size;
+            leaf->info.num_keys++; sibling->info.num_keys--;
+
+            leaf->leafbody.slot[i].key = sibling->leafbody.slot[j].key;
+            leaf->leafbody.slot[i].size = sibling->leafbody.slot[j].size;
+            leaf->leafbody.slot[i].offset = 128 + (12*leaf->info.num_keys) + leaf->freespace;
+            // leaf->leafbody.slot[i].offset = (i==0) ? PGSIZE : leaf->leafbody.slot[i-1].offset;
+            // leaf->leafbody.slot[i].offset -= sibling->leafbody.slot[j].size;
+
+            for(int k=0; k<sibling->leafbody.slot[j].size; k++) {
+                leaf->leafbody.value[leaf->leafbody.slot[i].offset-128+k]
+                    = sibling->leafbody.value[sibling->leafbody.slot[j].offset-128+k];
+            }
+        }
+        for(int i=movenums; i<movenums+sibling->info.num_keys; i++) {
+            sibling->leafbody.slot[i-movenums].key = sibling->leafbody.slot[i].key;
+            sibling->leafbody.slot[i-movenums].size = sibling->leafbody.slot[i].size;
+            sibling->leafbody.slot[i-movenums].offset = sibling->leafbody.slot[i].offset;
+        }
+        compact_value(table_id, sibling);
+        parent->branch[0].key = sibling->leafbody.slot[0].key;
+    } else {
+        uint32_t i = sibling->info.num_keys-1, movenums = 0;
+        uint64_t tmp_freespace = leaf->freespace;
+        for(i=sibling->info.num_keys-1; ; i--) {
+            tmp_freespace -= sibling->leafbody.slot[i].size;
+            movenums++;
+            if(tmp_freespace<THRESHOLD) break;
+
+            if(i==0) break;
+        }
+
+        for(uint32_t l=leaf->info.num_keys-1; ; l--) {
+            leaf->leafbody.slot[l+movenums].key = leaf->leafbody.slot[l].key;
+            leaf->leafbody.slot[l+movenums].size = leaf->leafbody.slot[l].size;
+            leaf->leafbody.slot[l+movenums].offset = leaf->leafbody.slot[l].offset;
+
+            if(l==0) break; 
+        }
+
+        for(uint32_t l=0, s=i; l<movenums; l++, s++) {
+            leaf->freespace -= 12+sibling->leafbody.slot[s].size;
+            sibling->freespace += 12+sibling->leafbody.slot[s].size;
+            leaf->info.num_keys++; sibling->info.num_keys--;
+
+            leaf->leafbody.slot[l].key = sibling->leafbody.slot[s].key;
+            leaf->leafbody.slot[l].size = sibling->leafbody.slot[s].size;
+            leaf->leafbody.slot[l].offset = 128 + (12*leaf->info.num_keys) + leaf->freespace;
+
+            for(int j=0; j<leaf->leafbody.slot[l].size; j++) {
+                leaf->leafbody.value[leaf->leafbody.slot[l].offset-128+j]
+                    = sibling->leafbody.value[sibling->leafbody.slot[s].offset-128+j];
+            }
+        }
+        compact_value(table_id, sibling);
+        parent->branch[my_index].key = leaf->leafbody.slot[0].key;
+    }
+    file_write_page(table_id, parent_num, parent);
+    file_write_page(table_id, sibling_num, sibling);
+    file_write_page(table_id, leaf_num, leaf);
+
+    free(parent);
+    free(sibling);
+    free(leaf);
+    return 0;
+}
+
+int coalesce_internal(int64_t table_id, int my_index, pagenum_t parent_num, page_t* parent, pagenum_t sibling_num, page_t* sibling, pagenum_t page_num, page_t* page) {
+    int64_t k_prime;
+    
+    if(my_index==-1) k_prime = parent->branch[0].key;
+    else k_prime = parent->branch[my_index].key;
+
+    sibling->branch[sibling->info.num_keys].key = k_prime;
+    sibling->branch[sibling->info.num_keys].pagenum = page->leftmost;
+    sibling->info.num_keys++;
+
+    page_t* child = (page_t*)malloc(sizeof(page_t));
+    file_read_page(table_id, page->leftmost, child);
+    child->info.parent_num = sibling_num;
+    file_write_page(table_id, page->leftmost, child);
+    
+    int i=sibling->info.num_keys;
+    int num_keys = page->info.num_keys;
+    for(int j=0; j<num_keys; j++, i++) {
+        sibling->branch[i].key= page->branch[j].key;
+        sibling->branch[i].pagenum = page->branch[j].pagenum;
+        sibling->info.num_keys++;
+        file_read_page(table_id, sibling->branch[i].pagenum, child);
+        child->info.parent_num = sibling_num;
+        file_write_page(table_id, sibling->branch[i].pagenum, child);
+    }
+
+    file_free_page(table_id, page_num);
+    file_write_page(table_id, sibling_num, sibling);
+
+    free(child);
+    free(page);
+    free(sibling);
+
+    return delete_entry(table_id, parent_num, parent, k_prime);
+}
+
+int redistribute_internal(int64_t table_id, pagenum_t parent_num, page_t* parent, pagenum_t sibling_num, page_t* sibling, pagenum_t page_num, page_t* page, int my_index) {
+    
+    if(my_index==-1) {
+        page->branch[page->info.num_keys].key = parent->branch[0].key;
+        page->branch[page->info.num_keys].pagenum = sibling->leftmost;
+
+        page_t* child = (page_t*)malloc(sizeof(page_t));
+        file_read_page(table_id, sibling->leftmost, child);
+        child->info.parent_num = page_num;
+        file_write_page(table_id, sibling->leftmost, child);
+
+        parent->branch[0].key = sibling->branch[0].key;
+        sibling->leftmost = sibling->branch[0].pagenum;
+        for(int i=0; i<sibling->info.num_keys-1; i++) {
+            sibling->branch[i].key = sibling->branch[i+1].key;
+            sibling->branch[i].pagenum = sibling->branch[i+1].pagenum;
+        }
+        page->info.num_keys++;
+        sibling->info.num_keys--;
+        free(child);
+    } else {
+        for(uint32_t i=page->info.num_keys; i>0; i--) {
+            page->branch[i].key = page->branch[i-1].key;
+            page->branch[i].pagenum = page->branch[i-1].pagenum;
+            if(i==1) break;
+        }
+        page->branch[0].key = parent->branch[my_index].key;
+        page->branch[0].pagenum = page->leftmost;
+        page->leftmost = sibling->branch[sibling->info.num_keys-1].pagenum;
+
+        page_t* child = (page_t*)malloc(sizeof(page_t));
+        file_read_page(table_id, page->branch[0].pagenum, child);
+        child->info.parent_num = page_num;
+        file_write_page(table_id, page->branch[0].pagenum, child);
+        
+        file_read_page(table_id, page->leftmost, child);
+        child->info.parent_num = page_num;
+        file_write_page(table_id, page->leftmost, child);
+
+        parent->branch[my_index].key = sibling->branch[sibling->info.num_keys-1].key;
+        page->info.num_keys++;
+        sibling->info.num_keys--;
+        free(child);
+    }
+
+    file_write_page(table_id, parent_num, parent);
+    file_write_page(table_id, sibling_num, sibling);
+    file_write_page(table_id, page_num, page);
+
+    free(parent);
+    free(sibling);
+    free(page);
+    
+    return 0;
+}
+
+int delete_entry(int64_t table_id, pagenum_t page_num, page_t* page, int64_t key) {
+    pagenum_t sibling_num;
+
+    if(!page->info.parent_num) return adjust_root(table_id, page_num, page, key);
+
+    if(page->info.isLeaf) {
+        uint32_t index=0;
+        for(index=0; index<page->info.num_keys; index++) {
+            if(page->leafbody.slot[index].key == key) break;
+        }
+        if(index==page->info.num_keys) {
+            free(page);
+            return 1;
+        }
+        delete_leaf(table_id, index, page_num, page, key);
+
+        if(page->freespace<THRESHOLD) {
+            file_write_page(table_id, page_num, page);
+            free(page);
+            return 0;
+        }
+
+        int my_index = get_my_index(table_id, page_num, page);
+        if(my_index==-2) {
+            file_write_page(table_id, page_num, page);
+            free(page);
+            return 1;
+        }
+
+        page_t* parent = (page_t*)malloc(sizeof(page_t));
+        file_read_page(table_id, page->info.parent_num, parent);
+
+        page_t* sibling = (page_t*)malloc(sizeof(page_t));
+        if(my_index==-1) sibling_num = parent->branch[0].pagenum;
+        else if(my_index==0) sibling_num = parent->leftmost;
+        else sibling_num = parent->branch[my_index-1].pagenum;
+        file_read_page(table_id, sibling_num, sibling);
+        
+        if(sibling->freespace>=INITIAL_FREE-page->freespace) {
+            if(my_index==-1) return coalesce_leaf(table_id, my_index, page->info.parent_num, parent, page_num, page, sibling_num, sibling);
+            return coalesce_leaf(table_id, my_index, page->info.parent_num, parent, sibling_num, sibling, page_num, page);
+        }
+        
+        return redistribute_leaf(table_id, page->info.parent_num, parent, sibling_num, sibling, page_num, page, my_index);
+    } else {
+        int min_keys = cut(MAX_ORDER) - 1, capacity = MAX_ORDER-1, my_index;
+        uint32_t index = 0;
+        for(index=0; index<page->info.num_keys; index++) {
+            if(page->branch[index].key == key) break;
+        }
+        if(index==page->info.num_keys) {
+            free(page);
+            return 1;
+        }
+        delete_internal(table_id, index, page_num, page, key);
+
+        if(page->info.num_keys >= min_keys) {
+            file_write_page(table_id, page_num, page);
+            free(page);
+            return 0;
+        }
+        my_index = get_my_index(table_id, page_num, page);
+        if(my_index==-2) {
+            file_write_page(table_id, page_num, page);
+            free(page);
+            return 0;
+        }
+        
+        page_t* parent = (page_t*)malloc(sizeof(page_t));
+        file_read_page(table_id, page->info.parent_num, parent);
+
+        page_t* sibling = (page_t*)malloc(sizeof(page_t));
+        if(my_index==-1) sibling_num = parent->branch[0].pagenum;
+        else if(my_index==0) sibling_num = parent->leftmost;
+        else sibling_num = parent->branch[my_index-1].pagenum;
+        file_read_page(table_id, sibling_num, sibling);
+
+        if(sibling->info.num_keys+page->info.num_keys < capacity) {
+            if(my_index==-1) return coalesce_internal(table_id, my_index, page->info.parent_num, parent, page_num, page, sibling_num, sibling);
+            return coalesce_internal(table_id, my_index, page->info.parent_num, parent, sibling_num, sibling, page_num, page);
+        }
+        return redistribute_internal(table_id, page->info.parent_num, parent, sibling_num, sibling, page_num, page, my_index); //redistribution
+    }
+    return 1;
+}
+
+int db_delete(int64_t table_id, int64_t key) {
+    page_t *header, *leaf;
+    pagenum_t root_num, leaf_num;
+    uint32_t i;
+    if(!isValid_table_id(table_id)) return 1;
+    root_num = get_rootnum(table_id);
+    if(!root_num) return 1;
+
+    leaf_num = find_leaf(table_id, root_num, key);
+    leaf = (page_t*)malloc(sizeof(page_t));
+    file_read_page(table_id, leaf_num, leaf);
+    
+    return delete_entry(table_id, leaf_num, leaf, key);
+}
+
+int init_db() {
+    return 0;
+}
+
+int shutdown_db() {
+    file_close_table_files();
+    return 0;
+}
