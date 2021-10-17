@@ -418,7 +418,7 @@ int start_new_tree(int64_t table_id, int64_t key, char * value, uint16_t val_siz
 int db_insert(int64_t table_id, int64_t key, char * value, uint16_t val_size) {
     int ret_num = 1;
     pagenum_t root_num, leaf_num;
-    page_t *header, *leaf;
+    page_t *leaf;
     
     if(!isValid_table_id(table_id)) return 1;
 
