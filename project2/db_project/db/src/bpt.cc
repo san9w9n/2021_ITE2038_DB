@@ -838,7 +838,7 @@ int delete_entry(int64_t table_id, pagenum_t page_num, page_t* page, int64_t key
 }
 
 int db_delete(int64_t table_id, int64_t key) {
-    page_t *header, *leaf;
+    page_t *leaf;
     pagenum_t root_num, leaf_num;
     uint32_t i;
     if(!isValid_table_id(table_id)) return 1;
