@@ -598,8 +598,6 @@ int redistribute_leaf(int64_t table_id, pagenum_t parent_num, page_t* parent, pa
             leaf->leafbody.slot[i].key = sibling->leafbody.slot[j].key;
             leaf->leafbody.slot[i].size = sibling->leafbody.slot[j].size;
             leaf->leafbody.slot[i].offset = 128 + (12*leaf->info.num_keys) + leaf->freespace;
-            // leaf->leafbody.slot[i].offset = (i==0) ? PGSIZE : leaf->leafbody.slot[i-1].offset;
-            // leaf->leafbody.slot[i].offset -= sibling->leafbody.slot[j].size;
 
             for(int k=0; k<sibling->leafbody.slot[j].size; k++) {
                 leaf->leafbody.value[leaf->leafbody.slot[i].offset-128+k]
