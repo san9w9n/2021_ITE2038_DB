@@ -416,7 +416,6 @@ int start_new_tree(int64_t table_id, int64_t key, char * value, uint16_t val_siz
 }
 
 int db_insert(int64_t table_id, int64_t key, char * value, uint16_t val_size) {
-    int ret_num = 1;
     pagenum_t root_num, leaf_num;
     page_t *leaf;
     
@@ -440,7 +439,7 @@ int db_insert(int64_t table_id, int64_t key, char * value, uint16_t val_size) {
     }
 
     if(leaf->freespace>=12+val_size) return insert_into_leaf(table_id, i, leaf_num, leaf, key, value, val_size);
-    return ret_num = insert_into_leaf_after_splitting(table_id, i, leaf_num, leaf, key, value, val_size);
+    return insert_into_leaf_after_splitting(table_id, i, leaf_num, leaf, key, value, val_size);
 }
 
 
