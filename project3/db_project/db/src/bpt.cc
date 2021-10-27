@@ -20,10 +20,8 @@ int cut(int length) {
 
 void valueCopy(char* src, page_t* dest, int16_t size, int16_t offset) {
     offset-=128;
-    if(offset<0) return;
-
-    for(int i=offset; i<offset+size; i++) {
-        dest->leafbody.value[i] = src[i-offset];
+    for(int i=0, j=offset; i<size; i++, j++) {
+        dest->leafbody.value[j] = src[i];
     }
 }
 
@@ -84,10 +82,10 @@ int db_find(int64_t table_id, int64_t key, char * ret_val, uint16_t * val_size) 
     if(i==leaf->info.num_keys) return 1;
 
     *val_size = leaf->leafbody.slot[i].size;
+    int offset = leaf->leafbody.slot[i].offset-128;
     for(uint16_t c=0; c<leaf->leafbody.slot[i].size; c++) {
-        ret_val[c] = leaf->leafbody.value[leaf->leafbody.slot[i].offset-128+c];
+        ret_val[c] = leaf->leafbody.value[offset+c];
     }
-
     manage_pin(leaf_idx, 0);
     return 0;
 }

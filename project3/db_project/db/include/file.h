@@ -20,7 +20,7 @@ typedef struct __attribute__((__packed__)) slot_t {
     int64_t key;
     uint16_t size;
     uint16_t offset;
-} slot_t; // 12
+} slot_t;
 
 typedef struct __attribute__((__packed__)) branch_t {
     int64_t key;

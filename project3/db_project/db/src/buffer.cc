@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <iostream>
 
 buffer_pool_t* buffer = NULL;
 
@@ -105,20 +106,20 @@ int give_idx() {
 }
 
 int init_buffer(int num_buf) {
-    //buffer생성
     if(!buffer) {
         buffer = (buffer_pool_t*)malloc(sizeof(buffer_pool_t));
         if(!buffer) {
             perror("MALLOC FAILED!!\n");
             exit(EXIT_FAILURE);
         }
+        if(num_buf<=10) num_buf = 10;
         buffer->frames = (frame_t*)malloc(sizeof(frame_t)*num_buf);
         if(!buffer->frames) {
             perror("MALLOC FAILED!!\n");
             exit(EXIT_FAILURE);
         }
         for(int i=0; i<num_buf; i++) {
-            buffer->frames[i].page = (page_t*)malloc(sizeof(page_t));
+            buffer->frames[i].page = (page_t*)malloc(PGSIZE);
             if(!buffer->frames[i].page) {
                 perror("MALLOC FAILED!!\n");
                 exit(EXIT_FAILURE);
@@ -217,10 +218,13 @@ void buffer_free_page(int64_t table_id, pagenum_t pagenum, int32_t idx) {
     hit = hit_idx(table_id, 0);
     // case 1: header page is in buffer.
     if(hit>=0) {
+        buffer->frames[idx].page->nextfree_num = buffer->frames[hit].page->nextfree_num;
+        file_write_page(table_id, pagenum, buffer->frames[idx].page);
         buffer->frames[hit].page->nextfree_num = pagenum;
         buffer->frames[hit].is_dirty = buffer->frames[hit].is_ref = 1;
         return;
     }
+    
     // case 2: header page is not in buffer.
     file_free_page(table_id, pagenum);
     hit = find_empty_frame();

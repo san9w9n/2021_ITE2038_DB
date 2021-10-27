@@ -10,13 +10,8 @@
 #define WRITE 1
 #define PGSIZE 4096
 #define FILENUMS 100
-
-// for debugging
-int64_t read_cnt, write_cnt;
-
 #define PGNUM(X) ((X)/PGSIZE)
 #define PGOFFSET(X) ((X)*PGSIZE)
-
 
 int table_nums = 0;
 Table* table;

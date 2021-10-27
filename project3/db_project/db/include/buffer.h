@@ -2,16 +2,16 @@
 #define __BUFFER_H__
 #include "file.h"
 
-typedef struct __attribute__((__packed__)) frame_t {
+typedef struct frame_t {
     page_t* page;
     int64_t table_id;
     pagenum_t page_num;
-    char is_dirty;
+    int is_dirty;
     int is_pinned;
     int nextLRU;
-    int prevLRU;
-    char is_ref;
-    char is_buf;
+    int prevLRU; 
+    char is_ref; 
+    char is_buf; 
 } frame_t;
 
 typedef struct buffer_pool_t {
