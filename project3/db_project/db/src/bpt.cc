@@ -10,7 +10,7 @@
 #define PGSIZE 4096
 
 int64_t open_table(char *pathname) {
-    return file_open_via_bufer(pathname);
+    return file_open_via_buffer(pathname);
 }
 
 int cut(int length) {
@@ -609,6 +609,7 @@ int adjust_root(int64_t table_id, pagenum_t root_num, page_t* root, int32_t root
 int coalesce_leaf(int64_t table_id, int my_index, pagenum_t parent_num, page_t* parent, int32_t parent_idx, pagenum_t sibling_num, page_t* sibling, int32_t sibling_idx, pagenum_t leaf_num, page_t* leaf, int32_t leaf_idx) {
     // cout << "merge leaf!!\n";
     int k_prime_index;
+    uint16_t siboff, leafoff;
     for(uint32_t i=sibling->info.num_keys, j=0; j<leaf->info.num_keys; i++,j++) {
         sibling->info.num_keys++;
         sibling->freespace-= 12+leaf->leafbody.slot[j].size;
@@ -617,10 +618,10 @@ int coalesce_leaf(int64_t table_id, int my_index, pagenum_t parent_num, page_t* 
         sibling->leafbody.slot[i].size = leaf->leafbody.slot[j].size;
         sibling->leafbody.slot[i].offset = 128+(12*sibling->info.num_keys)+sibling->freespace;
         
-        for(uint16_t k=0; k<sibling->leafbody.slot[i].size; k++) {
-            sibling->leafbody.value[sibling->leafbody.slot[i].offset-128+k]
-                = leaf->leafbody.value[leaf->leafbody.slot[j].offset-128+k];
-        }
+        siboff = sibling->leafbody.slot[i].offset-128;
+        leafoff = leaf->leafbody.slot[j].offset-128;
+        for(uint16_t k=0; k<sibling->leafbody.slot[i].size; k++)
+            sibling->leafbody.value[siboff+k] = leaf->leafbody.value[leafoff+k];
     }
     sibling->Rsibling = leaf->Rsibling;
     buffer_free_page(table_id, leaf_num, leaf_idx);
@@ -636,7 +637,9 @@ int redistribute_leaf(int64_t table_id, pagenum_t parent_num, page_t* parent, in
     // cout << "Restribure leaf!!\n";
     if(my_index==-1) {
         uint32_t num_keys;
+        uint16_t leafoff, siboff;
         uint64_t tmp_freespace = leaf->freespace, movenums = 0;
+
         for(uint32_t i=0; i<sibling->info.num_keys; i++) {
             tmp_freespace -= sibling->leafbody.slot[i].size;
             movenums++;
@@ -652,10 +655,10 @@ int redistribute_leaf(int64_t table_id, pagenum_t parent_num, page_t* parent, in
             leaf->leafbody.slot[i].size = sibling->leafbody.slot[j].size;
             leaf->leafbody.slot[i].offset = 128 + (12*leaf->info.num_keys) + leaf->freespace;
 
-            for(int k=0; k<sibling->leafbody.slot[j].size; k++) {
-                leaf->leafbody.value[leaf->leafbody.slot[i].offset-128+k]
-                    = sibling->leafbody.value[sibling->leafbody.slot[j].offset-128+k];
-            }
+            siboff = sibling->leafbody.slot[j].offset-128;
+            leafoff = leaf->leafbody.slot[i].offset-128;
+            for(int k=0; k<sibling->leafbody.slot[j].size; k++)
+                leaf->leafbody.value[leafoff+k] = sibling->leafbody.value[siboff+k];
         }
         for(int i=movenums; i<movenums+sibling->info.num_keys; i++) {
             sibling->leafbody.slot[i-movenums].key = sibling->leafbody.slot[i].key;
@@ -667,6 +670,8 @@ int redistribute_leaf(int64_t table_id, pagenum_t parent_num, page_t* parent, in
     } else {
         uint32_t i = sibling->info.num_keys-1, movenums = 0;
         uint64_t tmp_freespace = leaf->freespace;
+        uint16_t leafoff, siboff;
+
         for(i=sibling->info.num_keys-1; ; i--) {
             tmp_freespace -= sibling->leafbody.slot[i].size;
             movenums++;
@@ -692,9 +697,11 @@ int redistribute_leaf(int64_t table_id, pagenum_t parent_num, page_t* parent, in
             leaf->leafbody.slot[l].size = sibling->leafbody.slot[s].size;
             leaf->leafbody.slot[l].offset = 128 + (12*leaf->info.num_keys) + leaf->freespace;
 
+            leafoff = leaf->leafbody.slot[l].offset-128;
+            siboff = sibling->leafbody.slot[s].offset-128;
             for(int j=0; j<leaf->leafbody.slot[l].size; j++) {
-                leaf->leafbody.value[leaf->leafbody.slot[l].offset-128+j]
-                    = sibling->leafbody.value[sibling->leafbody.slot[s].offset-128+j];
+                leaf->leafbody.value[leafoff+j]
+                    = sibling->leafbody.value[siboff+j];
             }
         }
         compact_value(table_id, sibling, sibling_idx);

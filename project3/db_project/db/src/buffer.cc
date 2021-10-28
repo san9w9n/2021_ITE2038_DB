@@ -2,9 +2,42 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <iostream>
 
 buffer_pool_t* buffer = NULL;
+
+int buf_hashFunction(int64_t table_id, pagenum_t pagenum) {
+    size_t h, p;
+    p = pagenum % 1000000007;
+    h = (p<<2) + (p<<1) + p + table_id;
+    return h % buffer->num_bufs;
+}
+
+int find_empty_frame(int64_t table_id, pagenum_t pagenum) {
+    int i, tablesize;
+    tablesize = buffer->num_bufs;
+    i = buf_hashFunction(table_id, pagenum);
+    while(buffer->frames[i].is_buf) {
+        if(++i==tablesize) i=0;
+    }
+    append_LRU(i);
+    return i;
+}
+
+int hit_idx(int64_t table_id, pagenum_t pagenum) {
+    int i, hashValue, tablesize;
+    tablesize = buffer->num_bufs;
+    hashValue = buf_hashFunction(table_id, pagenum);
+    i = hashValue;
+    while(1) {
+        if(buffer->frames[i].is_buf && buffer->frames[i].table_id==table_id && buffer->frames[i].page_num==pagenum) {
+            delete_append_LRU(i);
+            return i;
+        }
+        if(++i==tablesize) i=0;
+        if(i==hashValue) break;
+    }
+    return -1;
+}
 
 int isValid(int64_t table_id) {
     if(!buffer || !isValid_table_id(table_id)) return 0;
@@ -42,39 +75,12 @@ void delete_append_LRU(int idx) {
     append_LRU(idx);
 }
 
-int find_empty_frame() {
-    int i=0;
-    for(i=0; i<buffer->num_bufs; i++) {
-        if(!buffer->frames[i].is_buf) break;
-    }
-    if(i==buffer->num_bufs) {
-        perror("FIND EMPTY FRAME FAILED!!\n");
-        exit(EXIT_FAILURE);
-    }
-    append_LRU(i);
-    return i;
-}
-
 void manage_pin(int32_t idx, int32_t flag) {
     if(flag) buffer->frames[idx].is_pinned++;
     else {
         if(buffer->frames[idx].is_pinned>0) 
             buffer->frames[idx].is_pinned--;
     }
-}
-
-int hit_idx(int64_t table_id, pagenum_t pagenum) {
-    int32_t point;
-    point = buffer->lastLRU;
-    while(point>=0) {
-        if(buffer->frames[point].table_id == table_id 
-            && buffer->frames[point].page_num == pagenum) {
-            delete_append_LRU(point);
-            return point;
-        }
-        point = buffer->frames[point].prevLRU;
-    }
-    return -1;
 }
 
 int give_idx() {
@@ -88,7 +94,7 @@ int give_idx() {
             }
         } else {
             if(!buffer->frames[CLK].is_ref) {
-                if(buffer->frames[CLK].is_dirty) 
+                if(buffer->frames[CLK].is_dirty)
                     file_write_page(buffer->frames[CLK].table_id, buffer->frames[CLK].page_num, buffer->frames[CLK].page);
                 memset(buffer->frames[CLK].page, 0x00, PGSIZE);
                 ret_idx = CLK;
@@ -112,7 +118,7 @@ int init_buffer(int num_buf) {
             perror("MALLOC FAILED!!\n");
             exit(EXIT_FAILURE);
         }
-        if(num_buf<=10) num_buf = 10;
+        if(num_buf<5) num_buf = 5;
         buffer->frames = (frame_t*)malloc(sizeof(frame_t)*num_buf);
         if(!buffer->frames) {
             perror("MALLOC FAILED!!\n");
@@ -138,7 +144,7 @@ int init_buffer(int num_buf) {
     return 1;
 }
 
-int64_t file_open_via_bufer(char *pathname) {
+int64_t file_open_via_buffer(char *pathname) {
     int64_t table_id;
     table_id = file_open_table_file(pathname);
     if(table_id < 0) return -1;
@@ -154,20 +160,30 @@ pagenum_t buffer_alloc_page(int64_t table_id) {
     // case 1: header page is in buffer.
     if(hit>=0) {
         buffer->frames[hit].is_pinned++;
-        if(buffer->num_frames < buffer->num_bufs) new_idx = find_empty_frame();
-        else new_idx = give_idx();
-        buffer->frames[new_idx].is_buf = buffer->frames[new_idx].is_ref = 1;
-        buffer->frames[new_idx].is_dirty = 0;
-        buffer->frames[new_idx].is_pinned = 0;
-        buffer->frames[new_idx].table_id = table_id;
-
+        
         if(!buffer->frames[hit].page->nextfree_num) {
             if(buffer->frames[hit].is_dirty) file_write_page(table_id, 0, buffer->frames[hit].page);
             buffer->frames[hit].is_dirty = 0;
             new_pagenum = file_alloc_page(table_id); // file size become twice
+
+            if(buffer->num_frames < buffer->num_bufs) new_idx = find_empty_frame(table_id, new_pagenum);
+            else new_idx = give_idx();
+            buffer->frames[new_idx].is_buf = buffer->frames[new_idx].is_ref = 1;
+            buffer->frames[new_idx].is_dirty = 0;
+            buffer->frames[new_idx].is_pinned = 0;
+            buffer->frames[new_idx].table_id = table_id;
+
             file_read_page(table_id, 0, buffer->frames[hit].page);
         } else {
             new_pagenum = buffer->frames[hit].page->nextfree_num;
+
+            if(buffer->num_frames < buffer->num_bufs) new_idx = find_empty_frame(table_id, new_pagenum);
+            else new_idx = give_idx();
+            buffer->frames[new_idx].is_buf = buffer->frames[new_idx].is_ref = 1;
+            buffer->frames[new_idx].is_dirty = 0;
+            buffer->frames[new_idx].is_pinned = 0;
+            buffer->frames[new_idx].table_id = table_id;
+
             file_read_page(table_id, new_pagenum, buffer->frames[new_idx].page);
             buffer->frames[hit].page->nextfree_num = buffer->frames[new_idx].page->nextfree_num;
             buffer->frames[hit].is_dirty = 1;
@@ -175,13 +191,12 @@ pagenum_t buffer_alloc_page(int64_t table_id) {
         buffer->frames[new_idx].page_num = new_pagenum;
         buffer->frames[hit].is_pinned--;
         buffer->frames[hit].is_ref = 1;
-
         return new_pagenum;
     }
 
     // case 2: header page is not in buffer.
     new_pagenum = file_alloc_page(table_id);
-    if(buffer->num_frames<buffer->num_bufs) hit = find_empty_frame();
+    if(buffer->num_frames<buffer->num_bufs) hit = find_empty_frame(table_id, new_pagenum);
     else hit = give_idx();
     buffer->frames[hit].is_pinned = 1;
     buffer->frames[hit].is_dirty = 0;
@@ -190,7 +205,7 @@ pagenum_t buffer_alloc_page(int64_t table_id) {
     buffer->frames[hit].table_id = table_id;
     file_read_page(table_id, 0, buffer->frames[hit].page);
     
-    if(buffer->num_frames < buffer->num_bufs) new_idx = find_empty_frame();
+    if(buffer->num_frames < buffer->num_bufs) new_idx = find_empty_frame(table_id, new_pagenum);
     else new_idx = give_idx();
     buffer->frames[new_idx].is_buf = buffer->frames[new_idx].is_ref = 1;
     buffer->frames[new_idx].is_dirty = 0;
@@ -224,10 +239,10 @@ void buffer_free_page(int64_t table_id, pagenum_t pagenum, int32_t idx) {
         buffer->frames[hit].is_dirty = buffer->frames[hit].is_ref = 1;
         return;
     }
-    
+
     // case 2: header page is not in buffer.
     file_free_page(table_id, pagenum);
-    hit = find_empty_frame();
+    hit = find_empty_frame(table_id, 0);
     buffer->frames[hit].is_dirty = 0;
     buffer->frames[hit].is_buf = buffer->frames[hit].is_ref = 1;
     buffer->frames[hit].page_num = 0;
@@ -243,7 +258,7 @@ int buffer_get_idx(int64_t table_id, pagenum_t pagenum) {
         buffer->frames[hit].is_buf = buffer->frames[hit].is_ref = 1;
         return hit;
     }
-    if(buffer->num_frames<buffer->num_bufs) hit = find_empty_frame();
+    if(buffer->num_frames<buffer->num_bufs) hit = find_empty_frame(table_id, pagenum);
     else hit = give_idx();
 
     file_read_page(table_id, pagenum, buffer->frames[hit].page);

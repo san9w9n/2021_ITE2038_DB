@@ -2,7 +2,6 @@
 #define __BPT_H__
 #include "buffer.h"
 
-
 // API
 int64_t open_table(char *pathname);
 int db_find(int64_t table_id, int64_t key, char * ret_val, uint16_t * val_size);

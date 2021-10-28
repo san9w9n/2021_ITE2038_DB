@@ -6,7 +6,7 @@
 #define PGSIZE 4096
 typedef uint64_t pagenum_t;
 
-typedef struct __attribute__((__packed__)) Table {
+typedef struct Table {
     int fd;
     char* filename;
 } Table;
