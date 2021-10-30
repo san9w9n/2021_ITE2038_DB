@@ -151,6 +151,7 @@ pagenum_t buffer_alloc_page(int64_t table_id) {
     if(hit>=0) {
         buffer->frames[hit].is_pinned++;
         
+        // subcase 1 : File has no more freepage.
         if(!buffer->frames[hit].page->nextfree_num) {
             if(buffer->frames[hit].is_dirty) file_write_page(table_id, 0, buffer->frames[hit].page);
             buffer->frames[hit].is_dirty = 0;
@@ -164,7 +165,10 @@ pagenum_t buffer_alloc_page(int64_t table_id) {
             buffer->frames[new_idx].table_id = table_id;
 
             file_read_page(table_id, 0, buffer->frames[hit].page);
-        } else {
+        }
+        
+        // subcase 2 : File has a freepage.
+        else {
             new_pagenum = buffer->frames[hit].page->nextfree_num;
 
             if(buffer->num_frames < buffer->num_bufs) new_idx = find_empty_frame(table_id, new_pagenum);
