@@ -10,8 +10,7 @@
 #define WRITE 1
 #define PGSIZE 4096
 #define FILENUMS 100
-#define PGNUM(X) ((X)/PGSIZE)
-#define PGOFFSET(X) ((X)*PGSIZE)
+#define PGOFFSET(X) ((X)<<12)
 
 int table_nums = 0;
 Table* table;

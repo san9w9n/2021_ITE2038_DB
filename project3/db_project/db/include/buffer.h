@@ -6,12 +6,11 @@ typedef struct frame_t {
     page_t* page;
     int64_t table_id;
     pagenum_t page_num;
-    int is_dirty;
     int is_pinned;
     int nextLRU;
-    int prevLRU; 
-    int8_t is_ref; 
-    int8_t is_buf; 
+    int prevLRU;
+    int8_t is_dirty;
+    int8_t is_buf;
 } frame_t;
 
 typedef struct buffer_pool_t {

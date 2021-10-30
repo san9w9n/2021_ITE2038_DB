@@ -607,7 +607,6 @@ int adjust_root(int64_t table_id, pagenum_t root_num, page_t* root, int32_t root
 }
 
 int coalesce_leaf(int64_t table_id, int my_index, pagenum_t parent_num, page_t* parent, int32_t parent_idx, pagenum_t sibling_num, page_t* sibling, int32_t sibling_idx, pagenum_t leaf_num, page_t* leaf, int32_t leaf_idx) {
-    // cout << "merge leaf!!\n";
     int k_prime_index;
     uint16_t siboff, leafoff;
     for(uint32_t i=sibling->info.num_keys, j=0; j<leaf->info.num_keys; i++,j++) {
@@ -634,7 +633,6 @@ int coalesce_leaf(int64_t table_id, int my_index, pagenum_t parent_num, page_t* 
 }
 
 int redistribute_leaf(int64_t table_id, pagenum_t parent_num, page_t* parent, int32_t parent_idx, pagenum_t sibling_num, page_t* sibling, int32_t sibling_idx, pagenum_t leaf_num, page_t* leaf, int32_t leaf_idx, int my_index) {
-    // cout << "Restribure leaf!!\n";
     if(my_index==-1) {
         uint32_t num_keys;
         uint16_t leafoff, siboff;
@@ -767,7 +765,6 @@ int redistribute_internal(int64_t table_id, pagenum_t parent_num, page_t* parent
     page_t *child;
     int32_t child_idx;
 
-    // cout << "Restribure internal!!\n";
     if(my_index==-1) {    
         page->branch[page->info.num_keys].key = parent->branch[0].key;
         page->branch[page->info.num_keys].pagenum = sibling->leftmost;
