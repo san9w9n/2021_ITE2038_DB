@@ -83,6 +83,7 @@ lock_t* lock_acquire(int table_id, int64_t key) {
 			tail->next = lock;
 			lock->prev = tail;
 			tmp->cur->tail = lock;
+			pthread_cond_wait(&lock->cond, &mutex);
 		} else { // 같은 레코드가 존재하지 않음.
 			entry_t* entry = (entry_t*)malloc(sizeof(entry_t));
 			entry->table_id = table_id;
@@ -94,7 +95,6 @@ lock_t* lock_acquire(int table_id, int64_t key) {
 			tmp->next = link;
 			link->next = nullptr;
 		}
-		while(lock->prev) pthread_cond_wait(&lock->cond, &mutex);
 	}
 	pthread_mutex_unlock(&mutex);
   	return lock;
