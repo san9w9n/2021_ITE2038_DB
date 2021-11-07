@@ -6,7 +6,6 @@
 #include <pthread.h>
 
 pthread_mutex_t mutex;
-typedef struct link_t link_t;
 
 struct pair_hash {
   	template <class T1, class T2>
@@ -40,7 +39,6 @@ struct link_t {
 };
 
 typedef std::unordered_map<std::pair<int, int64_t>, link_t* , pair_hash> lock_table_t;
-
 lock_table_t lock_table;
 
 int init_lock_table() {
@@ -49,18 +47,27 @@ int init_lock_table() {
 }
 
 lock_t* lock_acquire(int table_id, int64_t key) {
+	lock_t* 					lock;
+	lock_t* 					tail;
+	entry_t* 					entry;
+	link_t* 					tmp;
+	link_t*						link;
+	bool 						flag;
+	std::pair<int, int64_t> 	key_pair;
+
 	pthread_mutex_lock(&mutex);
 
-	lock_t* lock = (lock_t*)malloc(sizeof(lock_t));
+	lock = (lock_t*)malloc(sizeof(lock_t));
 	lock->prev = lock->next = nullptr;
 	lock->cond = PTHREAD_COND_INITIALIZER;
-	std::pair<int, int64_t> key_pair = {table_id, key};
-	lock_table_t::iterator it = lock_table.find(key_pair);
 	lock->sent_point.table_id = table_id;
 	lock->sent_point.key = key;
 
+	key_pair = {table_id, key};
+	lock_table_t::iterator it = lock_table.find(key_pair);
+	
 	if(it == lock_table.end()) {
-		entry_t* entry = (entry_t*)malloc(sizeof(entry_t));
+		entry = (entry_t*)malloc(sizeof(entry_t));
 		entry->table_id = table_id;
 		entry->key = key;
 		entry->tail = entry->head = lock;
@@ -69,8 +76,8 @@ lock_t* lock_acquire(int table_id, int64_t key) {
 		lock_table[key_pair]->cur = entry;
 		lock_table[key_pair]->next = nullptr;
 	} else {
-		bool flag = 1;
-		link_t* tmp = it->second;
+		flag = 1;
+		tmp = it->second;
 		while(tmp->cur->key!=key || tmp->cur->table_id!=table_id) {
 			if(!tmp->next) {
 				flag = 0;
@@ -78,39 +85,57 @@ lock_t* lock_acquire(int table_id, int64_t key) {
 			}
 			tmp = tmp->next;
 		}
-		if(flag) { // 같은 레코드에 접근 중.
-			lock_t* tail = tmp->cur->tail;
+		if(flag) {
+			tail = tmp->cur->tail;
 			tail->next = lock;
 			lock->prev = tail;
 			tmp->cur->tail = lock;
 			pthread_cond_wait(&lock->cond, &mutex);
-		} else { // 같은 레코드가 존재하지 않음.
-			entry_t* entry = (entry_t*)malloc(sizeof(entry_t));
+		} else {
+			entry = (entry_t*)malloc(sizeof(entry_t));
 			entry->table_id = table_id;
 			entry->key = key;
 			entry->tail = entry->head = lock;
 
-			link_t* link = (link_t*)malloc(sizeof(link_t));
+			link = (link_t*)malloc(sizeof(link_t));
 			link->cur = entry;
 			tmp->next = link;
 			link->next = nullptr;
 		}
 	}
 	pthread_mutex_unlock(&mutex);
+
   	return lock;
 };
 
 int lock_release(lock_t* lock_obj) {
-	pthread_mutex_lock(&mutex);
-	int table_id = lock_obj->sent_point.table_id;
-	int64_t key = lock_obj->sent_point.key;
-	std::pair<int, int64_t> key_pair = {table_id, key};
+	int 						table_id;
+	int64_t 					key;
+	link_t* 					prev_tmp;
+	link_t* 					tmp;
+	lock_t*						del;
+	std::pair<int, int64_t> 	key_pair;
 
-	link_t* prev_tmp = nullptr;
-	link_t* tmp = lock_table[key_pair];
+	pthread_mutex_lock(&mutex);
+
+	table_id = lock_obj->sent_point.table_id;
+	key = lock_obj->sent_point.key;
+	key_pair = {table_id, key};
+
+	prev_tmp = nullptr;
+	tmp = lock_table[key_pair];
+	if(!tmp || !tmp->cur) {
+		pthread_mutex_unlock(&mutex);
+		return 1;
+	}
+
 	while(tmp->cur->key!=key || tmp->cur->table_id!=table_id) {
-		tmp = tmp->next;
 		prev_tmp = tmp;
+		tmp = tmp->next;
+		if(!tmp) {
+			pthread_mutex_unlock(&mutex);
+			return 1;
+		}
 	}
 	if(tmp->cur->head == tmp->cur->tail) {
 		free(tmp->cur->head);
@@ -119,18 +144,19 @@ int lock_release(lock_t* lock_obj) {
 			free(tmp->cur);
 			free(tmp);
 		} else {
-			lock_table[{table_id, key}] = tmp->next;
+			lock_table[key_pair] = tmp->next;
 			free(tmp->cur);
 			free(tmp);
-			if(!lock_table[{table_id, key}]) lock_table.erase({table_id, key});
+			if(!lock_table[key_pair]) lock_table.erase(key_pair);
 		}
 	} else {
-		lock_t* del = tmp->cur->head;
+		del = tmp->cur->head;
 		tmp->cur->head = tmp->cur->head->next;
 		tmp->cur->head->prev = nullptr;
 		pthread_cond_signal(&tmp->cur->head->cond);
 		free(del);
 	}
+
 	pthread_mutex_unlock(&mutex);
   	return 0;
 }
