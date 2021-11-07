@@ -47,12 +47,12 @@ int init_lock_table() {
 }
 
 lock_t* lock_acquire(int table_id, int64_t key) {
-	lock_t* 					lock;
-	lock_t* 					tail;
-	entry_t* 					entry;
-	link_t* 					tmp;
-	link_t*						link;
-	bool 						flag;
+	lock_t* 				lock;
+	lock_t* 				tail;
+	entry_t* 				entry;
+	link_t* 				tmp;
+	link_t*					link;
+	bool 					flag;
 	std::pair<int, int64_t> 	key_pair;
 
 	pthread_mutex_lock(&mutex);
@@ -109,11 +109,11 @@ lock_t* lock_acquire(int table_id, int64_t key) {
 };
 
 int lock_release(lock_t* lock_obj) {
-	int 						table_id;
-	int64_t 					key;
-	link_t* 					prev_tmp;
-	link_t* 					tmp;
-	lock_t*						del;
+	int 					table_id;
+	int64_t 				key;
+	link_t* 				prev_tmp;
+	link_t* 				tmp;
+	lock_t*					del;
 	std::pair<int, int64_t> 	key_pair;
 
 	pthread_mutex_lock(&mutex);
