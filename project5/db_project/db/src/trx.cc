@@ -4,7 +4,6 @@
 #include <cstring>
 #include <stdio.h>
 #include <queue>
-#include <iostream>
 
 #define SHARED 0
 #define EXCLUSIVE 1
@@ -195,11 +194,12 @@ trx_abort(int trx_id)
             if(leaf_page->leafbody.slot[i].key == key) break;
         }
 
-        size = leaf_page->leafbody.slot[i].offset;
+        size = log->val_size;
         offset = leaf_page->leafbody.slot[i].offset-128;
         for(int k=offset; k<offset+size; k++) {
             leaf_page->leafbody.value[k] = log->old_value[k-offset];
         }
+        leaf_page->leafbody.slot[i].size = size;
         buffer_write_page(table_id, page_id, leaf_idx, 1);
 
         free(log->old_value);
@@ -502,6 +502,7 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
 
     trx = trx_manager->trx_table[trx_id];
     lock = give_lock(key, trx_id, lock_mode);
+    trx->waiting_lock = lock;
     if(lock_mode == SHARED) lock->bitmap |= MASK(i);
     lock->lock_state = WAITING;
     lock->sent_point = entry;
@@ -511,6 +512,7 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
         UNLOCK(lock_mutex);
         return 0;
     }
+    
     WAIT(lock->cond, lock_mutex);
     UNLOCK(lock_mutex);
     return 1;
@@ -646,7 +648,7 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
 
     *old_val_size = size;
     old_value = (char*)malloc(sizeof(char) * size + 1);
-    for(int k = offset; k<offset+size; k++) 
+    for(int k = offset; k<offset+size; k++)
         old_value[k-offset] = page->leafbody.value[k];
 
     for(int k = offset; k<offset+new_val_size; k++)
