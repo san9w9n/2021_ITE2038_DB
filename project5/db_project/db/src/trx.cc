@@ -660,10 +660,11 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
     log_it = trx->log_table.find({table_id, key});
     if(log_it == trx->log_table.end()) {
         log = (log_t*)malloc(sizeof(log_t));
+        log->old_value = (char*)malloc(sizeof(char) * size + 1);
         log->table_id = table_id;
         log->key = key;
         log->val_size = size;
-        // strncpy(log->old_value, old_value, size);
+        strncpy(log->old_value, old_value, size);
         trx->log_table[{table_id, key}] = log;
     }
 
