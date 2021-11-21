@@ -171,16 +171,10 @@ trx_abort(int trx_id)
     trx_table_t::iterator   it;
     log_t*                  log;
 
-    LOCK(trx_mutex);
-    it = trx_manager->trx_table.find(trx_id);
-    if(it == trx_manager->trx_table.end()) {
-        UNLOCK(trx_mutex);
-        return 0;
-    }
-    trx = it->second;
-    UNLOCK(trx_mutex);
+    trx = trx_manager->trx_table[trx_id];
 
-    for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) {
+    for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) 
+    {
         log = log_it->second;
     
         table_id = log->table_id;
@@ -195,11 +189,11 @@ trx_abort(int trx_id)
         }
 
         size = log->val_size;
+        leaf_page->leafbody.slot[i].size = size;
         offset = leaf_page->leafbody.slot[i].offset-128;
         for(int k=offset; k<offset+size; k++) {
             leaf_page->leafbody.value[k] = log->old_value[k-offset];
         }
-        leaf_page->leafbody.slot[i].size = size;
         buffer_write_page(table_id, page_id, leaf_idx, 1);
 
         free(log->old_value);
@@ -225,6 +219,7 @@ lock_release(trx_t* trx)
     lock_t*                 point;
     lock_t*                 lock;
     lock_t*                 del;
+    lock_t*                 tmp;
     entry_t*                entry;
     int                     lock_mode;
     int                     flag;
@@ -239,7 +234,6 @@ lock_release(trx_t* trx)
 
     point = trx->trx_next;
     while(point) {
-        flag = 0;
         entry = point->sent_point;
         table_id = entry->table_id;
         page_id = entry->page_id;
@@ -268,42 +262,43 @@ lock_release(trx_t* trx)
         {
             std::unordered_map<int, int> key_map;
             std::unordered_map<int, int>::iterator it;
+            uint64_t bit;
+            int index;
 
             bitmap = point->bitmap;
-
             leaf = buffer_read_page(table_id, page_id, &leaf_idx, READ);
             for(int i=0; i<leaf->info.num_keys; i++) {
-                if((MASK(i) & bitmap) != 0)
+                if(MASK(i) & bitmap) 
                     key_map[leaf->leafbody.slot[i].key] = 0;
+            }
+
+            tmp = entry->head;
+            while(tmp) 
+            {
+                if((tmp->lock_state == RUNNING) && (tmp->lock_mode == SHARED)) {
+                    index = 63;
+                    bit = tmp->bitmap;
+                    while(bit && index) {
+                        if(bit & 0x01)
+                            key_map[leaf->leafbody.slot[index].key] = 1;
+                        bit>>=1; index--;
+                    }
+                }
+                tmp = tmp->lock_next;
             }
 
             while(lock) 
             {
-                if(lock->lock_state == WAITING) 
-                {
+                if((lock->lock_state == WAITING) && (lock->lock_mode == EXCLUSIVE)) {
                     it = key_map.find(lock->key);
-                    if(it != key_map.end()) 
-                    {
-                        if(lock->lock_mode == SHARED) {
-                            if(it->second != 2) {
-                                lock->lock_state = RUNNING;
-                                trx_manager->trx_table[lock->owner_trx_id]->waiting_lock = nullptr;
-                                key_map[lock->key] = 1;
-                                SIGNAL(lock->cond);
-                            }
-                        }
-                        else {
-                            if(it->second == 0) {
-                                lock->lock_state = RUNNING;
-                                trx_manager->trx_table[lock->owner_trx_id]->waiting_lock = nullptr;
-                                key_map[lock->key] = 2;
-                                SIGNAL(lock->cond);
-                            }
-                            else key_map[lock->key] = 2;
-                        }
+                    if(it != key_map.end() && it->second == 0) {
+                        key_map[lock->key] = 1;
+                        lock->lock_state = RUNNING;
+                        trx_manager->trx_table[lock->owner_trx_id]->waiting_lock = nullptr;
+                        SIGNAL(lock->cond);
                     }
                 }
-                lock->lock_next;
+                lock = lock->lock_next;
             }
         }
 
