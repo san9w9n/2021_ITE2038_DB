@@ -406,7 +406,6 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
         buffer_write_page(table_id, page_id, leaf_idx, 0);
         return 0;
     }
-
     
     LOCK(trx_mutex);
     impl_trx_id = page->leafbody.slot[i].trx_id;
@@ -471,6 +470,7 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
                     point = point->lock_next;
                 }
                 lock = give_lock(key, trx_id, SHARED);
+                lock->sent_point = entry;
             }
 
             lock->bitmap |= MASK(i);
