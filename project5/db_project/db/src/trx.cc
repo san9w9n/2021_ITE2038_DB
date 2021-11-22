@@ -452,8 +452,20 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
       if(lock_it == lock_manager->lock_table.end()) {
         entry = give_entry(table_id, page_id);
         lock_manager->lock_table[{table_id, page_id}] = entry;
-      } 
-      else entry = lock_it->second;
+      } else {
+        entry = lock_it->second;
+        point = entry->head;
+        while(point) 
+        {
+          if((point->lock_mode == SHARED) && (point->owner_trx_id == trx_id)) {
+            free(lock);
+            point->bitmap |= MASK(i);
+            UNLOCK(lock_mutex);
+            return 1;
+          }
+          point = point->lock_next;
+        }
+      }
 
       lock->sent_point = entry;
       lock->lock_state = RUNNING;
@@ -736,7 +748,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
       if(mine)
       {
         if(lock_mode == SHARED) {
-          front->bitmap |= mask;
           free(lock);
           UNLOCK(lock_mutex);
           return NORMAL;
@@ -757,7 +768,12 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
         if(count==1) 
         {
           front->bitmap &= ~mask;
-          append_lock(entry, lock, trx);
+          if(!front->bitmap) {
+            front->lock_mode = EXCLUSIVE;
+          }
+          else {
+            append_lock(entry, lock, trx);
+          }
           trx->waiting_lock = nullptr;
           lock->lock_state = RUNNING;
           UNLOCK(lock_mutex);
