@@ -68,7 +68,7 @@ typedef struct trx_manager_t {
 
 typedef std::unordered_map<int, bool> visit_t;
 
-lock_t* give_lock(int64_t key, int trx_id, int lock_mode);
+lock_t* give_lock(int64_t key, int trx_id, int lock_mode, int i);
 entry_t* give_entry(int64_t table_id, pagenum_t page_id);
 int init_db(int num_buf);
 int shutdown_db();
