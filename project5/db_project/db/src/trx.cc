@@ -16,7 +16,7 @@
 #define DEADLOCK 1
 #define CHECK_IMPL 2
 
-#define MASK(X) (1<<(63-(X)))
+#define MASK(X) (1UL<<(63-(X)))
 #define LOCK(X) (pthread_mutex_lock(&(X)))
 #define UNLOCK(X) (pthread_mutex_unlock(&(X)))
 #define WAIT(X, Y) (pthread_cond_wait(&(X), &(Y)))
@@ -349,15 +349,18 @@ deadlock_detect(lock_t* lock_obj)
   std::queue<int>         Q;
   visit_t                 visit;
   lock_t*                 point;
+  lock_t*                 tmp;
   trx_t*                  trx;
   int                     cur;
   int64_t                 key;
+  uint64_t                bitmap;
 
   LOCK(trx_mutex);
+  bitmap = lock_obj->bitmap;
   key = lock_obj->key;
   point = lock_obj->lock_prev;
   while(point) {
-    if(point->key == key) 
+    if((point->key == key) || (point->bitmap & bitmap))
       Q.push(point->owner_trx_id);
     point = point->lock_prev;
   }
@@ -373,13 +376,15 @@ deadlock_detect(lock_t* lock_obj)
       continue;
     }
 
+    key = point->key;
+    bitmap = point->bitmap;
     point = point->lock_prev;
     while(point) {
       if(point->owner_trx_id == lock_obj->owner_trx_id) {
         UNLOCK(trx_mutex);
         return true;
       }
-      if(point->key == key) {
+      if((point->key == key) || (point->bitmap & bitmap)) {
         if(visit.find(point->owner_trx_id) == visit.end())
           Q.push(point->owner_trx_id);
       }
@@ -403,9 +408,11 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
   page_t*                 page;
   int                     leaf_idx;
   int                     impl_trx_id;
+  uint64_t                mask;
   trx_table_t::iterator   it;
   lock_table_t::iterator  lock_it;
 
+  mask = MASK(i);
   page = buffer_read_page(table_id, page_id, &leaf_idx, WRITE);
   if(page->leafbody.slot[i].key != key) {
     buffer_write_page(table_id, page_id, leaf_idx, 0);
@@ -459,7 +466,7 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
         {
           if((point->lock_mode == SHARED) && (point->owner_trx_id == trx_id)) {
             free(lock);
-            point->bitmap |= MASK(i);
+            point->bitmap |= mask;
             UNLOCK(lock_mutex);
             return 1;
           }
@@ -469,7 +476,7 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
 
       lock->sent_point = entry;
       lock->lock_state = RUNNING;
-      lock->bitmap |= MASK(i);
+      lock->bitmap |= mask;
       append_lock(entry, lock, trx);
       UNLOCK(lock_mutex);   
     }
@@ -493,7 +500,7 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
   trx = trx_manager->trx_table[trx_id];
   lock = give_lock(key, trx_id, lock_mode);
   trx->waiting_lock = lock;
-  if(lock_mode == SHARED) lock->bitmap |= MASK(i);
+  if(lock_mode == SHARED) lock->bitmap |= mask;
   lock->lock_state = WAITING;
   lock->sent_point = entry;
   append_lock(entry, lock, trx);
@@ -681,7 +688,10 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
 {
   int                     count;
   bool                    mine;
+  page_t*                 leaf;
+  int                     leaf_idx;
   uint64_t                mask;
+  uint64_t                bit;
   lock_t*                 point;
   lock_t*                 front;
   lock_t*                 tail;
@@ -772,6 +782,18 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
             front->lock_mode = EXCLUSIVE;
           }
           else {
+            leaf = buffer_read_page(table_id, entry->page_id, &leaf_idx, READ);
+            if(front->key == key) {
+              int i = 63;
+              bit = front->bitmap;
+              while(bit && i) {
+                if(bit & 1) {
+                  front->key = leaf->leafbody.slot[i].key;
+                  break;
+                }
+                bit>>=1; i--;
+              }
+            }
             append_lock(entry, lock, trx);
           }
           trx->waiting_lock = nullptr;
