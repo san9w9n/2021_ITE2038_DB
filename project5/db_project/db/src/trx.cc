@@ -350,9 +350,12 @@ deadlock_detect(lock_t* lock_obj)
   std::queue<int>         Q;
   visit_t                 visit;
   lock_t*                 point;
+  page_t*                 leaf;
   lock_t*                 tmp;
   trx_t*                  trx;
   int                     cur;
+  int                     leaf_idx;
+  int                     i;
   int64_t                 key;
   uint64_t                bitmap;
 
@@ -360,6 +363,15 @@ deadlock_detect(lock_t* lock_obj)
   bitmap = lock_obj->bitmap;
   key = lock_obj->key;
   point = lock_obj->lock_prev;
+
+  if(lock_obj->lock_mode == EXCLUSIVE) {
+    leaf = buffer_read_page(lock_obj->sent_point->table_id, lock_obj->sent_point->page_id, &leaf_idx, READ);
+    for(i=0; i<leaf->info.num_keys; i++) {
+      if(leaf->leafbody.slot[i].key == key) break;
+    }
+    bitmap = MASK(i);
+  }
+
   while(point) {
     if((point->key == key) || (point->bitmap & bitmap))
       Q.push(point->owner_trx_id);
@@ -380,6 +392,13 @@ deadlock_detect(lock_t* lock_obj)
     key = point->key;
     bitmap = point->bitmap;
     point = point->lock_prev;
+    if(point->lock_mode == EXCLUSIVE) {
+      leaf = buffer_read_page(point->sent_point->table_id, point->sent_point->page_id, &leaf_idx, READ);
+      for(i=0; i<leaf->info.num_keys; i++) {
+        if(leaf->leafbody.slot[i].key == key) break;
+      }
+      bitmap = MASK(i);
+    }
     while(point) {
       if(point->owner_trx_id == lock_obj->owner_trx_id) {
         UNLOCK(trx_mutex);
@@ -858,7 +877,6 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int l
     UNLOCK(lock_mutex);
     return 0;
   }
-  
   WAIT(lock->cond, lock_mutex);
   UNLOCK(lock_mutex);
   return 1;
