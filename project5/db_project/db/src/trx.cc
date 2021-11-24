@@ -267,13 +267,15 @@ lock_release(trx_t* trx)
       tmp = entry->head;
       while(tmp) 
       {
-        if((tmp->lock_state == ACQUIRED) && (tmp->lock_mode == SHARED)) {
-          index = 63;
-          bit = tmp->bitmap;
-          while(bit && index) {
-            if(bit & 0x01)
-              key_map[leaf->leafbody.slot[index].key] = 1;
-            bit>>=1; index--;
+        if(tmp!=point) {
+          if((tmp->lock_state == ACQUIRED) && (tmp->lock_mode == SHARED)) {
+            index = 63;
+            bit = tmp->bitmap;
+            while(bit && index) {
+              if(bit & 0x01)
+                key_map[leaf->leafbody.slot[index].key] = 1;
+              bit>>=1; index--;
+            }
           }
         }
         tmp = tmp->lock_next;
