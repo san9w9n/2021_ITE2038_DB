@@ -408,7 +408,7 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
   it = trx_manager->trx_table.find(trx_id);
   if(it == trx_manager->trx_table.end()) {
     UNLOCK(trx_mutex);
-    return 0;
+    return 1;
   }
   UNLOCK(trx_mutex);
 
@@ -443,8 +443,10 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
     }
   }
   page = buffer_read_page(table_id, page_id, &leaf_idx, READ);
-  if(page->leafbody.slot[i].key != key)
+  if(page->leafbody.slot[i].key != key) {
     trx_abort(trx_id);
+    return 1;
+  }
 
   offset = page->leafbody.slot[i].offset - 128;
   size = page->leafbody.slot[i].size;
@@ -481,7 +483,7 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
   it = trx_manager->trx_table.find(trx_id);
   if(it == trx_manager->trx_table.end()) {
     UNLOCK(trx_mutex);
-    return 0;
+    return 1;
   }
   UNLOCK(trx_mutex);
 
