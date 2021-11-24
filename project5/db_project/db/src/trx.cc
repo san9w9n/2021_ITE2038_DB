@@ -448,8 +448,9 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
     }
   }
 
-  page = buffer_read_page(table_id, page_id, &leaf_idx, READ);
+  page = buffer_read_page(table_id, page_id, &leaf_idx, WRITE);
   if(page->leafbody.slot[i].key != key) {
+    buffer_write_page(table_id, page_id, leaf_idx, 0);
     trx_abort(trx_id);
     return 1;
   }
@@ -460,6 +461,7 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
     ret_val[k-offset] = page->leafbody.value[k];
   }
   *val_size = size;
+  buffer_write_page(table_id, page_id, leaf_idx, 0);
 
   return 0;
 }
