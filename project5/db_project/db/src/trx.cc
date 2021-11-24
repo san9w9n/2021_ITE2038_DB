@@ -412,6 +412,11 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
   }
   UNLOCK(trx_mutex);
 
+  if(!isValid(table_id)) {
+    trx_abort(trx_id);
+    return 1;
+  }
+
   header = buffer_read_page(table_id, 0, &header_idx, READ);
   root_num = header->root_num;
   if(!root_num) {
@@ -442,13 +447,14 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
       return 1;
     }
   }
+
   page = buffer_read_page(table_id, page_id, &leaf_idx, READ);
   if(page->leafbody.slot[i].key != key) {
     trx_abort(trx_id);
     return 1;
   }
 
-  offset = page->leafbody.slot[i].offset - 128;
+  offset = page->leafbody.slot[i].offset-128;
   size = page->leafbody.slot[i].size;
   for(int k=offset; k<offset+size; k++) {
     ret_val[k-offset] = page->leafbody.value[k];
@@ -486,6 +492,11 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
     return 1;
   }
   UNLOCK(trx_mutex);
+
+  if(!isValid(table_id)) {
+    trx_abort(trx_id);
+    return 1;
+  }
 
   header = buffer_read_page(table_id, 0, &header_idx, READ);
   root_num = header->root_num;
@@ -533,8 +544,10 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
   old_value = (char*)malloc(sizeof(char) * size + 1);
   for(int k = offset; k<offset+size; k++)
     old_value[k-offset] = page->leafbody.value[k];
+
   for(int k = offset; k<offset+new_val_size; k++)
     page->leafbody.value[k] = values[k-offset];
+
   page->leafbody.slot[i].size = new_val_size;
   page->leafbody.slot[i].trx_id = trx_id;
 
@@ -548,7 +561,9 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
     log->table_id = table_id;
     log->key = key;
     log->val_size = size;
-    strncpy(log->old_value, old_value, size);
+    for(int k=0; k<size; k++) {
+      log->old_value[k] = old_value[k];
+    }
     trx->log_table[{table_id, key}] = log;
   }
 
