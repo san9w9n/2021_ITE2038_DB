@@ -271,7 +271,7 @@ lock_release(trx_t* trx)
           bit = tmp->bitmap;
           for(int i=0; i<leaf->info.num_keys; i++) {
             if(MASK(i) & bit) 
-              key_map[leaf->leafbody.slot[i].key] = 0;
+              key_map[leaf->leafbody.slot[i].key] = 1;
           }
         }
         tmp = tmp->lock_next;
