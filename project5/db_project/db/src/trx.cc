@@ -414,14 +414,12 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
   UNLOCK(trx_mutex);
 
   if(!isValid(table_id)) {
-    // trx_abort(trx_id);
     return 1;
   }
 
   header = buffer_read_page(table_id, 0, &header_idx, READ);
   root_num = header->root_num;
   if(!root_num) {
-    // trx_abort(trx_id);
     return 1;
   }
 
@@ -432,7 +430,6 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
   }
   if(i == page->info.num_keys) {
     buffer_write_page(table_id, page_id, leaf_idx, 0);
-    // trx_abort(trx_id);
     return 1;
   }
   buffer_write_page(table_id, page_id, leaf_idx, 0);
@@ -788,7 +785,7 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
   lock_table_t::iterator  lock_it;
 
   mask = MASK(i);
-  page = buffer_read_page(table_id, page_id, &leaf_idx, WRITE);
+  page = buffer_read_page(table_id, page_id, &leaf_idx, READ);
   if(page->leafbody.slot[i].key != key) {
     buffer_write_page(table_id, page_id, leaf_idx, 0);
     return DEADLOCK;
@@ -798,12 +795,12 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
   impl_trx_id = page->leafbody.slot[i].trx_id;
   if(impl_trx_id == trx_id) {
     UNLOCK(trx_mutex);
-    buffer_write_page(table_id, page_id, leaf_idx, 0);
+    // buffer_write_page(table_id, page_id, leaf_idx, 0);
     return NORMAL;
   }
   
   it = trx_manager->trx_table.find(impl_trx_id);
-  buffer_write_page(table_id, page_id, leaf_idx, 0);
+  // buffer_write_page(table_id, page_id, leaf_idx, 0);
   if(it == trx_manager->trx_table.end()) {
     UNLOCK(trx_mutex);
     if(lock_mode == SHARED) 
