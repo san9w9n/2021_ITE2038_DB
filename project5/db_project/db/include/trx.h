@@ -57,8 +57,6 @@ typedef struct trx_t {
     log_table_t log_table;
     lock_t* trx_next;
     lock_t* waiting_lock;
-    int state;
-    pthread_mutex_t small_trx_mutex;
 } trx_t;
 typedef std::unordered_map<int, trx_t*> trx_table_t;
 
