@@ -57,6 +57,8 @@ typedef struct trx_t {
     log_table_t log_table;
     lock_t* trx_next;
     lock_t* waiting_lock;
+    int state;
+    pthread_mutex_t small_trx_mutex;
 } trx_t;
 typedef std::unordered_map<int, trx_t*> trx_table_t;
 
@@ -68,22 +70,21 @@ typedef struct trx_manager_t {
 
 typedef std::unordered_map<int, bool> visit_t;
 
-lock_t* give_lock(int64_t key, int trx_id, bool lock_mode, int i);
+lock_t* give_lock(int64_t key, int trx_id, bool lock_mode);
 entry_t* give_entry(int64_t table_id, pagenum_t page_id);
-int lock_append_wait(entry_t* entry, lock_t* lock, trx_t* trx);
 int init_db(int num_buf);
 int shutdown_db();
 int init_lock_table(void);
 int init_trx_table(void);
 int trx_begin(void);
+bool isValid_trx(int trx_id);
 int trx_commit(int trx_id);
 void trx_abort(int trx_id);
 int lock_release(trx_t* trx);
 bool deadlock_detect(lock_t* lock_obj);
-bool impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool lock_mode, int i);
 int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int trx_id);
 int db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, uint16_t* old_val_size, int trx_id);
 void append_lock(entry_t* entry, lock_t* lock, trx_t* trx);
-int lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool lock_mode, int index);
+int lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool lock_mode);
 
 #endif
