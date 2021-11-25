@@ -18,6 +18,10 @@
 #define DEADLOCK 1
 #define CHECK_IMPL 2
 
+#define ACTIVE 0
+#define ABORT 1
+#define COMMIT 2
+
 #define MASK(X) (1UL<<(63-(X)))
 #define LOCK(X) (pthread_mutex_lock(&(X)))
 #define UNLOCK(X) (pthread_mutex_unlock(&(X)))
@@ -424,42 +428,41 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
   }
 
   page_id = find_leaf(table_id, root_num, key);
-  page = buffer_read_page(table_id, page_id, &leaf_idx, WRITE);
+  page = buffer_read_page(table_id, page_id, &leaf_idx, READ);
   for(i=0; i<page->info.num_keys; i++) {
     if(page->leafbody.slot[i].key == key) break;
   }
   if(i == page->info.num_keys) {
-    buffer_write_page(table_id, page_id, leaf_idx, 0);
     return 1;
   }
-  buffer_write_page(table_id, page_id, leaf_idx, 0);
 
+  LOCK(lock_mutex);
   flag = lock_acquire(table_id, page_id, key, trx_id, SHARED, i);
   if(flag == DEADLOCK) {
+    UNLOCK(lock_mutex);
     trx_abort(trx_id);
     return 1;
   }
   if(flag == CHECK_IMPL) {
     if(impl_to_expl(table_id, page_id, key, trx_id, SHARED, i) == DEADLOCK) {
+      UNLOCK(lock_mutex);
       trx_abort(trx_id);
       return 1;
     }
   }
+  UNLOCK(lock_mutex);
 
-  page = buffer_read_page(table_id, page_id, &leaf_idx, WRITE);
+  page = buffer_read_page(table_id, page_id, &leaf_idx, READ);
   if(page->leafbody.slot[i].key != key) {
-    buffer_write_page(table_id, page_id, leaf_idx, 0);
     trx_abort(trx_id);
     return 1;
   }
-
   offset = page->leafbody.slot[i].offset-128;
   size = page->leafbody.slot[i].size;
   for(int k=offset; k<offset+size; k++) {
     ret_val[k-offset] = page->leafbody.value[k];
   }
   *val_size = size;
-  buffer_write_page(table_id, page_id, leaf_idx, 0);
 
   return 0;
 }
@@ -517,18 +520,21 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
   }
   buffer_write_page(table_id, page_id, leaf_idx, 0);
 
-  
+  LOCK(lock_mutex);
   flag = lock_acquire(table_id, page_id, key, trx_id, EXCLUSIVE, i);
   if(flag == DEADLOCK) {
+    UNLOCK(lock_mutex);
     trx_abort(trx_id);
     return 1;
   }
   if(flag == CHECK_IMPL) {
     if(impl_to_expl(table_id, page_id, key, trx_id, EXCLUSIVE, i) == DEADLOCK) {
+      UNLOCK(lock_mutex);
       trx_abort(trx_id);
       return 1;
     }
   }
+  UNLOCK(lock_mutex);
 
   page = buffer_read_page(table_id, page_id, &leaf_idx, WRITE);
   if(page->leafbody.slot[i].key != key) {
@@ -601,7 +607,6 @@ lock_append_wait(entry_t* entry, lock_t* lock, trx_t* trx)
     return DEADLOCK;
   }
   WAIT(lock->cond, lock_mutex);
-  UNLOCK(lock_mutex);
   return NORMAL;
 }
 
@@ -621,12 +626,9 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
   lock_t*                 lock;
   trx_t*                  trx;
   lock_table_t::iterator  it;
-
-  LOCK(lock_mutex);
   
   it = lock_manager->lock_table.find({table_id, page_id});
   if(it == lock_manager->lock_table.end()) {
-    UNLOCK(lock_mutex);
     return CHECK_IMPL;
   }
 
@@ -644,7 +646,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
       if(point->lock_mode == EXCLUSIVE) {
         if(point->owner_trx_id == trx_id) {
           free(lock);
-          UNLOCK(lock_mutex);
           return NORMAL;
         }
         return lock_append_wait(entry, lock, trx);
@@ -667,7 +668,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
         {
           if(lock_mode == SHARED) {
             free(lock);
-            UNLOCK(lock_mutex);
             return NORMAL;
           }
           
@@ -728,11 +728,9 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
               }
             }
             trx->waiting_lock = nullptr;
-            UNLOCK(lock_mutex);
             return NORMAL;
           }
           free(lock);
-          UNLOCK(lock_mutex);
           return DEADLOCK;
         }
 
@@ -743,22 +741,9 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
           tail = tail->lock_prev;
         }
         if(lock_mode == SHARED) {
-          front = entry->head;
-          while(front) {
-            if(front->owner_trx_id == trx_id && front->lock_mode == SHARED) {
-              free(lock);
-              front->bitmap |= mask;
-              UNLOCK(lock_mutex);
-              return NORMAL;
-            }
-            front = front->lock_next;
-          }
-        }
-        if(lock_mode == SHARED) {
           append_lock(entry, lock, trx);
           trx->waiting_lock = nullptr;
           lock->lock_state = ACQUIRED;
-          UNLOCK(lock_mutex);
           return NORMAL;
         } 
         return lock_append_wait(entry, lock, trx);
@@ -767,7 +752,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
     point = point->lock_next;
   }
   free(lock);
-  UNLOCK(lock_mutex);
   return CHECK_IMPL;
 }
 
@@ -808,7 +792,6 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
     UNLOCK(trx_mutex);
     if(lock_mode == SHARED) 
     {
-      LOCK(lock_mutex);
       trx = trx_manager->trx_table[trx_id];
       trx->waiting_lock = nullptr;
 
@@ -825,7 +808,6 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
           if((point->lock_mode == SHARED) && (point->owner_trx_id == trx_id)) {
             free(lock);
             point->bitmap |= mask;
-            UNLOCK(lock_mutex);
             return NORMAL;
           }
           point = point->lock_next;
@@ -834,12 +816,10 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
       lock->sent_point = entry;
       lock->lock_state = ACQUIRED;
       append_lock(entry, lock, trx);
-      UNLOCK(lock_mutex);   
     }
     return NORMAL;
   }
   
-  LOCK(lock_mutex);
   lock_it = lock_manager->lock_table.find({table_id, page_id});
   if(lock_it == lock_manager->lock_table.end()) {
       entry = give_entry(table_id, page_id);
