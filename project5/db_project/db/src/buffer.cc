@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#pragma GCC optimize("O3")
+#pragma GCC optimize("Ofast")
+#pragma GCC optimize("unroll-loops")
 
 #define LOCK(X) pthread_mutex_lock(&(X));
 #define UNLOCK(X) pthread_mutex_unlock(&(X));
