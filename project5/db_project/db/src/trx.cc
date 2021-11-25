@@ -170,7 +170,7 @@ trx_abort(int trx_id)
   log_t*                  log;
 
   LOCK(trx_mutex);
-  
+
   trx = trx_manager->trx_table[trx_id];
 
   for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) 
@@ -584,8 +584,10 @@ append_lock(entry_t* entry, lock_t* lock, trx_t* trx)
     lock->lock_prev = tail;
     entry->tail = lock;
   }
+  LOCK(trx_mutex);
   lock->trx_next = trx->trx_next;
   trx->trx_next = lock;
+  UNLOCK(trx_mutex);
 }
 
 int
@@ -776,6 +778,7 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
   lock_t*                 impl_lock;
   lock_t*                 lock;
   lock_t*                 point;
+  lock_t*                 tail;
   trx_t*                  trx;
   page_t*                 page;
   int                     leaf_idx;
@@ -847,7 +850,18 @@ impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
   impl_lock = give_lock(key, impl_trx_id, EXCLUSIVE, i);
   impl_lock->lock_state = ACQUIRED;
   impl_lock->sent_point = entry;
-  append_lock(entry, impl_lock, it->second);
+  // append_lock(entry, impl_lock, it->second);
+  if(!entry->head) {
+    entry->head = entry->tail = impl_lock;
+    impl_lock->lock_prev = impl_lock->lock_next = nullptr;
+  } else {
+    tail = entry->tail;
+    tail->lock_next = impl_lock;
+    impl_lock->lock_prev = tail;
+    entry->tail = impl_lock;
+  }
+  impl_lock->trx_next = (it->second)->trx_next;
+  (it->second)->trx_next = impl_lock;
   UNLOCK(trx_mutex);
 
   trx = trx_manager->trx_table[trx_id];
