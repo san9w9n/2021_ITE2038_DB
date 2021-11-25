@@ -414,14 +414,14 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
   UNLOCK(trx_mutex);
 
   if(!isValid(table_id)) {
-    trx_abort(trx_id);
+    // trx_abort(trx_id);
     return 1;
   }
 
   header = buffer_read_page(table_id, 0, &header_idx, READ);
   root_num = header->root_num;
   if(!root_num) {
-    trx_abort(trx_id);
+    // trx_abort(trx_id);
     return 1;
   }
 
@@ -432,7 +432,7 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
   }
   if(i == page->info.num_keys) {
     buffer_write_page(table_id, page_id, leaf_idx, 0);
-    trx_abort(trx_id);
+    // trx_abort(trx_id);
     return 1;
   }
   buffer_write_page(table_id, page_id, leaf_idx, 0);
@@ -497,14 +497,14 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
   UNLOCK(trx_mutex);
 
   if(!isValid(table_id)) {
-    trx_abort(trx_id);
+    // trx_abort(trx_id);
     return 1;
   }
 
   header = buffer_read_page(table_id, 0, &header_idx, READ);
   root_num = header->root_num;
   if(!root_num) {
-    trx_abort(trx_id);
+    // trx_abort(trx_id);
     return 1;
   }
 
@@ -515,7 +515,7 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
   }
   if(i == page->info.num_keys) {
     buffer_write_page(table_id, page_id, leaf_idx, 0);
-    trx_abort(trx_id);
+    // trx_abort(trx_id);
     return 1;
   }
   buffer_write_page(table_id, page_id, leaf_idx, 0);
