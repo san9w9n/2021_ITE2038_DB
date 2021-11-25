@@ -12,51 +12,6 @@
 #define MAX_ORDER 249
 #define PGSIZE 4096
 
-#if 0
-#include <bits/stdc++.h>
-using namespace std;
-
-void
-printbpt(int64_t table_id) {
-    queue<int> q;
-    int idx;
-    pagenum_t rootnum;
-    pagenum_t pagenum;
-    page_t* header;
-    page_t* page;
-    int size;
-
-    header = buffer_read_page(table_id, 0, &idx, READ);
-    rootnum = header->root_num;
-    if(!rootnum) {
-        return ;
-    }
-
-    q.push(rootnum);
-    while(!q.empty()) {
-        size = q.size();
-        while(size--) {
-            pagenum = q.front(); q.pop();
-            page = buffer_read_page(table_id, pagenum, &idx, READ);
-            if(!page->info.isLeaf) {
-                q.push(page->leftmost);
-                for(int i=0; i<page->info.num_keys; i++) {
-                    cout << page->branch[i].key << ' ';
-                    q.push(page->branch[i].pagenum);
-                }
-                cout << " | ";
-            } else {
-                for(int i=0; i<page->info.num_keys; i++) {
-                    cout << page->leafbody.slot[i].key << ' ';
-                }
-                cout << " | ";
-            }
-        }
-        cout << '\n';
-    }
-}
-#endif
-
 int64_t open_table(char *pathname) {
     return file_open_via_buffer(pathname);
 }
@@ -89,7 +44,7 @@ pagenum_t find_leaf(int64_t table_id, pagenum_t root_num, int64_t key) {
             ret_num = root->branch[i].pagenum;
         }
         if(!ret_num) {
-            perror("FIND_LEAF FAILED\n");
+            // // perror("FIND_LEAF FAILED\n");
             exit(EXIT_FAILURE);
         }
         root = buffer_read_page(table_id, ret_num, &next_idx, READ);
@@ -128,7 +83,7 @@ int insert_into_internal_after_splitting(int64_t table_id, uint32_t index, pagen
 
     tmp=(branch_t*)malloc(sizeof(branch_t) * 252);
     if(!tmp) {
-        perror("MALLOC FAILED!!\n");
+        // perror("MALLOC FAILED!!\n");
         exit(EXIT_FAILURE);
     }
     num_keys = parent->info.num_keys + 1;
@@ -276,7 +231,7 @@ int insert_into_leaf_after_splitting(int64_t table_id, uint32_t index, pagenum_t
 
     old_leaf = (page_t*)malloc(sizeof(page_t));
     if(!old_leaf) {
-        perror("MALLOC FAILED!!\n");
+        // perror("MALLOC FAILED!!\n");
         exit(EXIT_FAILURE);
     }
     old_leaf->parent_num = leaf->parent_num;
@@ -486,7 +441,7 @@ int get_my_index(int64_t table_id, pagenum_t pagenum, page_t* page) {
 void compact_value(int64_t table_id, page_t* leaf, int32_t leaf_idx) {
     page_t* tmp = (page_t*)malloc(sizeof(page_t));
     if(!tmp) {
-        perror("MALLOC FAILED!!\n");
+        // perror("MALLOC FAILED!!\n");
         exit(EXIT_FAILURE);
     }
 
