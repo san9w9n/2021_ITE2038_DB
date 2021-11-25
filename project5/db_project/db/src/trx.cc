@@ -133,7 +133,6 @@ trx_commit(int trx_id)
     return 0;
   }
   trx = it->second;
-  UNLOCK(trx_mutex);
 
   lock_release(trx);
   for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) {
@@ -143,7 +142,6 @@ trx_commit(int trx_id)
   trx->log_table.clear();
   delete trx;
   
-  LOCK(trx_mutex);
   trx_manager->trx_table.erase(trx_id);
   UNLOCK(trx_mutex);
 
@@ -171,6 +169,8 @@ trx_abort(int trx_id)
   trx_table_t::iterator   it;
   log_t*                  log;
 
+  LOCK(trx_mutex);
+  
   trx = trx_manager->trx_table[trx_id];
 
   for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) 
@@ -206,7 +206,7 @@ trx_abort(int trx_id)
 
   delete trx;
   
-  LOCK(trx_mutex);
+  
   trx_manager->trx_table.erase(trx_id);
   UNLOCK(trx_mutex);
 }
