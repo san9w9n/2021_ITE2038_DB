@@ -138,11 +138,11 @@ trx_commit(int trx_id)
 
   lock_release(trx);
 
-  for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) {
-    delete[] log_it->second->old_value;
-    delete log_it->second;
-  }
-  trx->log_table.clear();
+  // for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) {
+  //   delete[] log_it->second->old_value;
+  //   delete log_it->second;
+  // }
+  // trx->log_table.clear();
   trx->state = COMMIT;
 
   return trx_id;
@@ -171,34 +171,34 @@ trx_abort(int trx_id)
 
 
   trx = trx_manager->trx_table[trx_id-1];
-  for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) 
-  {
-    log = log_it->second;
+  // for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) 
+  // {
+  //   log = log_it->second;
 
-    table_id = log->table_id;
-    key = log->key;
+  //   table_id = log->table_id;
+  //   key = log->key;
 
-    header_page = buffer_read_page(table_id, 0, &header_idx, READ);
-    root_num = header_page->root_num;
-    page_id = find_leaf(table_id, root_num, key);
-    leaf_page = buffer_read_page(table_id, page_id, &leaf_idx, WRITE);
-    for(i=0; i<leaf_page->info.num_keys; i++) {
-      if(leaf_page->leafbody.slot[i].key == key) break;
-    }
+  //   header_page = buffer_read_page(table_id, 0, &header_idx, READ);
+  //   root_num = header_page->root_num;
+  //   page_id = find_leaf(table_id, root_num, key);
+  //   leaf_page = buffer_read_page(table_id, page_id, &leaf_idx, WRITE);
+  //   for(i=0; i<leaf_page->info.num_keys; i++) {
+  //     if(leaf_page->leafbody.slot[i].key == key) break;
+  //   }
 
-    size = log->val_size;
-    leaf_page->leafbody.slot[i].size = size;
-    offset = leaf_page->leafbody.slot[i].offset-128;
-    for(int k=offset; k<offset+size; k++) {
-      leaf_page->leafbody.value[k] = log->old_value[k-offset];
-    }
-    buffer_write_page(table_id, page_id, leaf_idx, 1);
+  //   size = log->val_size;
+  //   leaf_page->leafbody.slot[i].size = size;
+  //   offset = leaf_page->leafbody.slot[i].offset-128;
+  //   for(int k=offset; k<offset+size; k++) {
+  //     leaf_page->leafbody.value[k] = log->old_value[k-offset];
+  //   }
+  //   buffer_write_page(table_id, page_id, leaf_idx, 1);
 
-    delete[] log->old_value;
-    delete log;
-    log = nullptr;
-  }
-  trx->log_table.clear();
+  //   delete[] log->old_value;
+  //   delete log;
+  //   log = nullptr;
+  // }
+  // trx->log_table.clear();
   lock_release(trx);
   trx->state = ABORT;
 }
@@ -460,18 +460,18 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
 
   buffer_write_page(table_id, page_id, page_idx, 1);
 
-  log_it = trx->log_table.find({table_id, key});
-  if(log_it == trx->log_table.end()) {
-    log = new log_t;
-    log->old_value = new char[size+1];
-    log->table_id = table_id;
-    log->key = key;
-    log->val_size = size;
-    for(int k=0; k<size; k++) {
-      log->old_value[k] = old_value[k];
-    }
-    trx->log_table[{table_id, key}] = log;
-  }
+  // log_it = trx->log_table.find({table_id, key});
+  // if(log_it == trx->log_table.end()) {
+  //   log = new log_t;
+  //   log->old_value = new char[size+1];
+  //   log->table_id = table_id;
+  //   log->key = key;
+  //   log->val_size = size;
+  //   for(int k=0; k<size; k++) {
+  //     log->old_value[k] = old_value[k];
+  //   }
+  //   trx->log_table[{table_id, key}] = log;
+  // }
   return 0;
 }
 
