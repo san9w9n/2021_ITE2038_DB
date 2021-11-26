@@ -298,17 +298,6 @@ CONTINUE:
   return 0;
 }
 
-
-int dfs(bool* visit, std::vector<int>& edge, int cur) {
-  int next_trx_id;
-
-  if(!edge[cur]) return 1;
-
-  next_trx_id = edge[cur];
-  if(visit[next_trx_id]) return 0;
-  return 0;
-}
-
 bool
 deadlock_detect(lock_t* lock_obj) 
 {
@@ -324,7 +313,6 @@ deadlock_detect(lock_t* lock_obj)
 
   LOCK(trx_mutex);
   std::vector<int> edge(trx_manager->trx_cnt + 1);
-
   for(int i=0; i<trx_manager->trx_cnt; i++) {
     trx = trx_manager->trx_table[i];
     if(trx->state != ACTIVE) continue;
