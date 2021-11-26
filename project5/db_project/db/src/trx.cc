@@ -2,8 +2,6 @@
 
 #pragma GCC optimize("O3")
 
-#include <cstring>
-
 #define SHARED 0
 #define EXCLUSIVE 1
 
@@ -391,7 +389,8 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
   page = buffer_read_page(table_id, page_id, &page_idx, READ);
   offset = page->leafbody.slot[key_index].offset-128;
   size = page->leafbody.slot[key_index].size;
-  memcpy(ret_val, &(page->leafbody.value[offset]), size);
+  for(int i=offset, j=0; i<offset+size; j++, i++)
+    ret_val[j] = page->leafbody.value[i];
   *val_size = size;
 
   return 0;
@@ -456,15 +455,15 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
   offset = page->leafbody.slot[key_index].offset-128;
   size = page->leafbody.slot[key_index].size;
   *old_val_size = size;
-  // old_value = new char[size + 1];
-  // for(int i=offset, j=0; i<offset+size; j++,i++)
-  //   old_value[j] = page->leafbody.value[i];
+  old_value = new char[size + 1];
+  for(int i=offset, j=0; i<offset+size; j++,i++)
+    old_value[j] = page->leafbody.value[i];
 
-  memcpy(&(page->leafbody.value[offset]), values, new_val_size);
+  for(int i=offset, j=0; i<offset+new_val_size; j++, i++)
+    page->leafbody.value[i] = values[j];
+
   page->leafbody.slot[key_index].size = new_val_size;
   page->leafbody.slot[key_index].trx_id = trx_id;
-  // for(int i=offset, j=0; i<offset+new_val_size; j++, i++)
-  //   page->leafbody.value[i] = values[j];
 
   buffer_write_page(table_id, page_id, page_idx, 1);
 
