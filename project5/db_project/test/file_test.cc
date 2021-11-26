@@ -1,6 +1,5 @@
 #include "file.h"
 #include <gtest/gtest.h>
-#include <string>
 #include <stdio.h>
 
 TEST(FileInitTest, HandlesInitialization) {
@@ -9,18 +8,14 @@ TEST(FileInitTest, HandlesInitialization) {
     FILE *f;
 
     table_id = file_open_table_file("init_test.db");
-    ASSERT_TRUE(table_id >= 0)
-        << "File descriptor is not valid!!: "
-        << table_id;
+    ASSERT_TRUE(table_id >= 0);
     
     f = fopen("init_test.db", "r");
     fseek(f, 0, SEEK_END);
     fsize = ftell(f);
     fclose(f);
     off_t num_pages = 2560;
-    EXPECT_EQ(num_pages, fsize / 4096)
-        << "The initial number of pages does not match the requirement: "
-        << num_pages;
+    EXPECT_EQ(num_pages, fsize / 4096);
     file_close_table_files();
     int is_removed = remove("init_test.db");
     ASSERT_EQ(is_removed, 0);
@@ -45,39 +40,30 @@ TEST_F(FileTest, HandlesPageAllocation) {
     int freepages = 100;
     pagenum_t freepage_list[100];
 
-    ASSERT_TRUE(table_id>=0)
-        << "File descriptor is not valid!!: "
-        << table_id;
+    ASSERT_TRUE(table_id>=0);
     allocated_page = file_alloc_page(table_id);
-    ASSERT_TRUE(allocated_page > 0)
-        << "Header page shouldn't be allocated!!";
+    ASSERT_TRUE(allocated_page > 0);
     
     for(int i=0; i<freepages; i++) {
         freepage_list[i] = file_alloc_page(table_id);
-        ASSERT_TRUE(freepage_list[i] > 0)
-            << "Header page shouldn't be allocated!!";
+        ASSERT_TRUE(freepage_list[i] > 0);
     }
     for(int i=0; i<freepages; i++) {
         file_free_page(table_id, freepage_list[i]);
     }
     for(int i=freepages-1; i>=0; i--) {
-        EXPECT_EQ(file_alloc_page(table_id), freepage_list[i])
-            << "The page is not freed properly!";
+        EXPECT_EQ(file_alloc_page(table_id), freepage_list[i]);
     }
 }
 
 TEST_F(FileTest, CheckReadWriteOperation) {
     page_t *dest, *src;
     pagenum_t src_num;
-    ASSERT_TRUE(table_id >= 0)
-        << "File descriptor is not valid!!: "
-        << table_id;
+    ASSERT_TRUE(table_id >= 0);
     src_num = file_alloc_page(table_id);
-    ASSERT_TRUE(src_num>0)
-        << "Header page shouldn't be allocated!!";
+    ASSERT_TRUE(src_num>0);
     src = (page_t*)malloc(sizeof(page_t));
-    ASSERT_TRUE(src!=NULL)
-        << "Malloc failed!!";
+    ASSERT_TRUE(src!=NULL);
 
     src->info.isLeaf = 1;
     src->parent_num = 10;
@@ -91,8 +77,7 @@ TEST_F(FileTest, CheckReadWriteOperation) {
     file_write_page(table_id, src_num, src);
 
     dest = (page_t*)malloc(sizeof(page_t));
-    ASSERT_TRUE(dest!=NULL)
-        << "Malloc failed!!";
+    ASSERT_TRUE(dest!=NULL);
     
     file_read_page(table_id, src_num, dest);
 
@@ -115,29 +100,22 @@ TEST_F(FileTest, SizeBecomeTwice) {
     off_t firstsize, twicesize;
     long loop;
 
-    ASSERT_TRUE(table_id >= 0)
-        << "File descriptor is not valid!!: "
-        << table_id;
+    ASSERT_TRUE(table_id >= 0);
     
     f = fopen("test1.db", "r");
     fseek(f, 0, SEEK_END);
     firstsize = ftell(f)/4096;
     fclose(f);
 
-    ASSERT_TRUE(firstsize>=2560)
-        << "The number of pages in the file must be equal to or greater than 2560!! firstsize is "
-        << firstsize;
+    ASSERT_TRUE(firstsize>=2560);
 
     loop = firstsize;
     while(loop--) {
-        ASSERT_NE(file_alloc_page(table_id), 0)
-            << "Header page shouldn't be allocated!!";
+        ASSERT_NE(file_alloc_page(table_id), 0);
     }
     f = fopen("test1.db", "r");
     fseek(f, 0, SEEK_END);
     twicesize = ftell(f)/4096;
     fclose(f);
-    ASSERT_EQ(twicesize, firstsize*2)
-        << "twicesize needs to be twice the size of firstsize!\n"
-        << "twicesize: " << twicesize << ", firstsize: " << firstsize;
+    ASSERT_EQ(twicesize, firstsize*2);
 }
