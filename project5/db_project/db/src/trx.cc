@@ -252,29 +252,43 @@ lock_release(trx_t* trx)
       tmp = entry->head;
       while(tmp) {
         if((tmp->key == key)) {
-          if((tmp->lock_state == ACQUIRED) && (tmp->lock_mode == SHARED)) {
+          if((tmp->lock_mode == SHARED)) {
             cnt++;
-            break;
-          } else if((tmp->lock_mode == EXCLUSIVE)) {
-            if((tmp->key == key) && (tmp->lock_mode == EXCLUSIVE)) {
+          } 
+          else if((tmp->lock_mode == EXCLUSIVE)) {
+            if(!cnt) {
+              cnt++;
+              tmp->lock_state = ACQUIRED;
+              trx_manager->trx_table[tmp->owner_trx_id-1]->waiting_lock = nullptr;
               SIGNAL(tmp->cond);
-              break;
             }
           }
+          if(tmp->lock_state == WAITING) SIGNAL(tmp->cond);
         }
         tmp = tmp->lock_next;
       }
-    } else {
+    } 
+    
+    else {
       flag = 0;
       while(lock) {
         if(lock->key == key) {
           if(lock->lock_mode == SHARED) {
-            flag = 1;
-            SIGNAL(lock->cond);
+            if(flag<=1) {
+              flag = 1;
+              lock->lock_state = ACQUIRED;
+              trx_manager->trx_table[lock->owner_trx_id-1]->waiting_lock = nullptr;
+              SIGNAL(lock->cond);
+            }
           } else {
-            if(!flag) SIGNAL(lock->cond);
-            break;
+            if(!flag) {
+              flag = 2;
+              lock->lock_state = ACQUIRED;
+              trx_manager->trx_table[lock->owner_trx_id-1]->waiting_lock = nullptr;
+              SIGNAL(lock->cond);
+            }
           }
+          if(lock->lock_state == WAITING) SIGNAL(lock->cond);
         }
         lock = lock->lock_next;
       }
@@ -526,8 +540,13 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
           return DEADLOCK;
         }
         WAIT(new_lock->cond, lock_mutex);
-        new_lock->lock_state = ACQUIRED;
-        trx->waiting_lock = nullptr;
+        while(new_lock->lock_state == WAITING) {
+          if(deadlock_detect(new_lock)) {
+            UNLOCK(lock_mutex);
+            return DEADLOCK;
+          }
+          WAIT(new_lock->cond, lock_mutex);
+        }
         UNLOCK(lock_mutex);
         return NORMAL;
       }
@@ -594,8 +613,13 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
           return DEADLOCK;
         }
         WAIT(my_lock->cond, lock_mutex);
-        my_lock->lock_state = ACQUIRED;
-        trx->waiting_lock = nullptr;
+        while(my_lock->lock_state == WAITING) {
+          if(deadlock_detect(my_lock)) {
+            UNLOCK(lock_mutex);
+            return DEADLOCK;
+          }
+          WAIT(my_lock->cond, lock_mutex);
+        }
         UNLOCK(lock_mutex);
         return NORMAL;
       }
@@ -616,8 +640,13 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
         return DEADLOCK;
       }
       WAIT(new_lock->cond, lock_mutex);
-      new_lock->lock_state = ACQUIRED;
-      trx->waiting_lock = nullptr;
+      while(new_lock->lock_state == WAITING) {
+        if(deadlock_detect(new_lock)) {
+          UNLOCK(lock_mutex);
+          return DEADLOCK;
+        }
+        WAIT(new_lock->cond, lock_mutex);
+      }
       UNLOCK(lock_mutex);
       return NORMAL;
     }
