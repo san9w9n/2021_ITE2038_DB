@@ -1,7 +1,6 @@
 #include "trx.h"
 
 #pragma GCC optimize("O3")
-#pragma GCC optimize("unroll-loops")
 
 #define SHARED 0
 #define EXCLUSIVE 1

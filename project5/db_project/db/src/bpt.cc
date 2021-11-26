@@ -1,7 +1,6 @@
 #include <stdlib.h>
 
 #pragma GCC optimize("O3")
-#pragma GCC optimize("unroll-loops")
 
 #include "bpt.h"
 
