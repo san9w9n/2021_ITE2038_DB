@@ -3,6 +3,7 @@
 
 #include <bpt.h>
 #include <unordered_map>
+#include <vector>
 typedef uint64_t pagenum_t;
 
 // for lock manager
@@ -57,8 +58,9 @@ typedef struct trx_t {
     log_table_t log_table;
     lock_t* trx_next;
     lock_t* waiting_lock;
+    int state;
 } trx_t;
-typedef std::unordered_map<int, trx_t*> trx_table_t;
+typedef std::vector<trx_t*> trx_table_t;
 
 typedef struct trx_manager_t {
     trx_table_t trx_table;
@@ -75,7 +77,7 @@ int shutdown_db();
 int init_lock_table(void);
 int init_trx_table(void);
 int trx_begin(void);
-bool isValid_trx(int trx_id);
+trx_t* give_trx(int trx_id);
 int trx_commit(int trx_id);
 void trx_abort(int trx_id);
 int lock_release(trx_t* trx);
