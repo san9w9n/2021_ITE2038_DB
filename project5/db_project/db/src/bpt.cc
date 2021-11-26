@@ -41,10 +41,6 @@ pagenum_t find_leaf(int64_t table_id, pagenum_t root_num, int64_t key) {
             }
             ret_num = root->branch[i].pagenum;
         }
-        if(!ret_num) {
-            // // perror("FIND_LEAF FAILED\n");
-            exit(EXIT_FAILURE);
-        }
         root = buffer_read_page(table_id, ret_num, &next_idx, READ);
     }
 
@@ -80,10 +76,6 @@ int insert_into_internal_after_splitting(int64_t table_id, uint32_t index, pagen
     int32_t new_parent_idx, child_idx;
 
     tmp=(branch_t*)malloc(sizeof(branch_t) * 252);
-    if(!tmp) {
-        // perror("MALLOC FAILED!!\n");
-        exit(EXIT_FAILURE);
-    }
     num_keys = parent->info.num_keys + 1;
     
     int split = cut(MAX_ORDER)-1, ret=1;
@@ -228,10 +220,6 @@ int insert_into_leaf_after_splitting(int64_t table_id, uint32_t index, pagenum_t
     new_leaf->Rsibling = leaf->Rsibling;
 
     old_leaf = (page_t*)malloc(sizeof(page_t));
-    if(!old_leaf) {
-        // perror("MALLOC FAILED!!\n");
-        exit(EXIT_FAILURE);
-    }
     old_leaf->parent_num = leaf->parent_num;
     old_leaf->info.isLeaf = leaf->info.isLeaf;
     old_leaf->info.num_keys = 0;
@@ -438,10 +426,6 @@ int get_my_index(int64_t table_id, pagenum_t pagenum, page_t* page) {
 
 void compact_value(int64_t table_id, page_t* leaf, int32_t leaf_idx) {
     page_t* tmp = (page_t*)malloc(sizeof(page_t));
-    if(!tmp) {
-        // perror("MALLOC FAILED!!\n");
-        exit(EXIT_FAILURE);
-    }
 
     for(int i=0; i<leaf->info.num_keys; i++) {
         tmp->leafbody.slot[i].offset = (i==0) ? PGSIZE : tmp->leafbody.slot[i-1].offset;

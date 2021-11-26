@@ -255,8 +255,7 @@ lock_release(trx_t* trx)
           if((tmp->lock_state == ACQUIRED) && (tmp->lock_mode == SHARED)) {
             cnt++;
             break;
-          }
-          else if((tmp->lock_mode == EXCLUSIVE)) {
+          } else if((tmp->lock_mode == EXCLUSIVE)) {
             if((tmp->key == key) && (tmp->lock_mode == EXCLUSIVE)) {
               SIGNAL(tmp->cond);
               break;
@@ -265,26 +264,21 @@ lock_release(trx_t* trx)
         }
         tmp = tmp->lock_next;
       }
-    }
-    
-    else {
+    } else {
       flag = 0;
       while(lock) {
         if(lock->key == key) {
           if(lock->lock_mode == SHARED) {
             flag = 1;
             SIGNAL(lock->cond);
-          }
-          else {
-            if(!flag) 
-              SIGNAL(lock->cond);
+          } else {
+            if(!flag) SIGNAL(lock->cond);
             break;
           }
         }
         lock = lock->lock_next;
       }
     }
-
 CONTINUE:
     del = point;
     point = point->trx_next;
@@ -311,8 +305,8 @@ deadlock_detect(lock_t* lock_obj)
 
   LOCK(trx_mutex);
   std::vector<int> edge(trx_manager->trx_cnt + 1);
-  for(int i=0; i<trx_manager->trx_cnt; i++) {
-    trx = trx_manager->trx_table[i];
+  for(const auto& it : trx_manager->trx_table) {
+    trx = it;
     if(trx->state != ACTIVE) continue;
     if(!(lock = trx->waiting_lock)) continue;
     key = lock->key;
@@ -326,12 +320,12 @@ deadlock_detect(lock_t* lock_obj)
   flag = false;
   slower = faster = lock_obj->owner_trx_id;
   while (slower && faster && edge[faster]) {
-      slower = edge[slower];
-      faster = edge[edge[faster]];
-      if(slower == faster) {
-        flag = true;
-        break;
-      }
+    slower = edge[slower];
+    faster = edge[edge[faster]];
+    if(slower == faster) {
+      flag = true;
+      break;
+    }
   }
   UNLOCK(trx_mutex);
   return flag;
@@ -555,6 +549,7 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
           else if(point->lock_state == WAITING) {
             find_wait = true;
             cnt++;
+            break;
           }
           else cnt++;
         }

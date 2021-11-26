@@ -94,7 +94,6 @@ int give_idx() {
         if(i<0) break;
     }
     if(i<0 && ret_idx<0) {
-        // perror("GIVE_IDX FAILED");
         exit(EXIT_FAILURE);
     }
     delete_append_LRU(ret_idx);
@@ -104,23 +103,11 @@ int give_idx() {
 int init_buffer(int num_buf) {
     if(!buffer) {
         buffer = (buffer_pool_t*)malloc(sizeof(buffer_pool_t));
-        if(!buffer) {
-            // perror("MALLOC FAILED!!\n");
-            exit(EXIT_FAILURE);
-        }
         buf_mutex = PTHREAD_MUTEX_INITIALIZER;
         if(num_buf<5) num_buf = 5;
         buffer->frames = (frame_t*)malloc(sizeof(frame_t)*num_buf);
-        if(!buffer->frames) {
-            // perror("MALLOC FAILED!!\n");
-            exit(EXIT_FAILURE);
-        }
         for(int i=0; i<num_buf; i++) {
             buffer->frames[i].page = (page_t*)malloc(PGSIZE);
-            if(!buffer->frames[i].page) {
-                // perror("MALLOC FAILED!!\n");
-                exit(EXIT_FAILURE);
-            }
             memset(buffer->frames[i].page, 0x00, PGSIZE);
             buffer->frames[i].page_num = 0;
             buffer->frames[i].nextLRU = buffer->frames[i].prevLRU = -1;
@@ -234,10 +221,6 @@ pagenum_t buffer_alloc_page(int64_t table_id) {
 
 void buffer_free_page(int64_t table_id, pagenum_t pagenum, int32_t idx) {
     int hit;
-    if(buffer->frames[idx].table_id!=table_id || buffer->frames[idx].page_num!=pagenum) {
-        // perror("BUFFER FREE PAGE FAILED!! : LOGIC IS WRONG!!\n");
-        exit(EXIT_FAILURE);
-    }
     LOCK(buf_mutex);
     memset(buffer->frames[idx].page, 0x00, PGSIZE);
     buffer->frames[idx].is_buf = buffer->frames[idx].is_dirty = 0;
@@ -320,10 +303,6 @@ page_t* buffer_read_page(int64_t table_id, pagenum_t pagenum, int* idx, bool mod
 }
 
 void buffer_write_page(int64_t table_id, pagenum_t pagenum, int32_t idx, bool success) {
-    if(buffer->frames[idx].table_id!=table_id || buffer->frames[idx].page_num!=pagenum) {
-        // perror("BUFFER WRITE PAGE FAILED!! : LOGIC IS WRONG!!\n");
-        exit(EXIT_FAILURE);
-    }
     if(success) buffer->frames[idx].is_dirty = 1;
     buffer->frames[idx].state = UNLOCKED;
     UNLOCK(buffer->frames[idx].page_mutex);
