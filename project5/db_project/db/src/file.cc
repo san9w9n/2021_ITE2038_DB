@@ -259,7 +259,7 @@ void file_write_page(int64_t table_id, pagenum_t pagenum, const page_t* src) {
         // perror("FILE WRITE FAILED!!\n");
         exit(EXIT_FAILURE);
     }
-    fsync(fd);
+    // fsync(fd);
 }
 
 void file_close_table_files() {
