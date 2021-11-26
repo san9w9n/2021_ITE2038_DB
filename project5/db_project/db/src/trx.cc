@@ -295,22 +295,30 @@ bool
 deadlock_detect(lock_t* lock_obj) 
 {
   std::stack<int>         S;
-  visit_t                 visit;
+  bool*                   visit;
   lock_t*                 point;
   page_t*                 leaf;
   lock_t*                 tmp;
   trx_t*                  trx;
+  trx_t*                  my_trx;
+  entry_t*                entry;
   int                     cur;
-  int                     tmp_trx_id;
   int                     leaf_idx;
+  int                     my_trx_id;
   int                     i;
   int64_t                 key;
 
   LOCK(trx_mutex);
+  visit = new bool[trx_manager->trx_cnt + 2];
+  for(int i=0; i<trx_manager->trx_cnt+2; i++) visit[i] = 0;
+
   key = lock_obj->key;
   point = lock_obj->lock_prev;
+  my_trx_id = lock_obj->owner_trx_id;
+  my_trx = trx_manager->trx_table[my_trx_id-1];
+
   while(point) {
-    if((point->key == key) && (point->owner_trx_id != lock_obj->owner_trx_id))
+    if((point->key == key) && (point->owner_trx_id != my_trx_id))
       S.push(point->owner_trx_id);
     point = point->lock_prev;
   }
@@ -318,32 +326,36 @@ deadlock_detect(lock_t* lock_obj)
   while(!S.empty()) 
   {
     cur = S.top(); S.pop();
-    if(visit.find(cur) != visit.end()) continue;
+    if(visit[cur]) continue;
+    visit[cur] = true;
 
     trx = trx_manager->trx_table[cur-1];
-    point = trx_manager->trx_table[cur-1]->waiting_lock;
-    if(!point) {
-      visit[cur] = true;
+    if(!(point = trx_manager->trx_table[cur-1]->waiting_lock))
       continue;
-    }
-
+    
     key = point->key;
-    point = point->lock_prev;
-    tmp_trx_id = cur;
-    while(point) {
-      if(point->owner_trx_id==lock_obj->owner_trx_id) {
+    entry = point->sent_point;
+    tmp = entry->head;
+    while(tmp) {
+      if(tmp->key == key && tmp->owner_trx_id == my_trx_id) {
+        delete[] visit;
         UNLOCK(trx_mutex);
         return true;
       }
-      if((point->key == key) && (point->owner_trx_id != tmp_trx_id)) {
-        if(visit.find(point->owner_trx_id) == visit.end())
+      tmp = tmp->lock_next;
+    }
+
+    point = point->lock_prev;
+    while(point) {
+      if((point->key == key) && (!visit[point->owner_trx_id])) {
           S.push(point->owner_trx_id);
       }
       point = point->lock_prev;
     }
-    visit[cur] = true;
   }
+
   UNLOCK(trx_mutex);
+  delete[] visit;
   return false;
 }
 
