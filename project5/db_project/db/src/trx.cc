@@ -297,17 +297,6 @@ CONTINUE:
   return 0;
 }
 
-
-int dfs(bool* visit, std::vector<int>& edge, int cur) {
-  int next_trx_id;
-
-  if(!edge[cur]) return 1;
-
-  next_trx_id = edge[cur];
-  if(visit[next_trx_id]) return 0;
-  return 0;
-}
-
 bool
 deadlock_detect(lock_t* lock_obj) 
 {
@@ -356,7 +345,6 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
   trx_t*        trx;
   page_t*       header;
   page_t*       page;
-  pagenum_t     root_num;
   pagenum_t     page_id;
   int           header_idx;
   int           page_idx;
@@ -371,17 +359,26 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
   if(!(trx = give_trx(trx_id))) return 1;
 
   header = buffer_read_page(table_id, 0, &header_idx, READ);
-  root_num = header->root_num;
-  if(!root_num)
-    return 1;
+  page_id = header->root_num;
+  if(!page_id) return 1;
 
-  page_id = find_leaf(table_id, root_num, key);
   page = buffer_read_page(table_id, page_id, &page_idx, READ);
+  while(!page->info.isLeaf) {
+    if(key<page->branch[0].key) page_id = page->leftmost;
+    else {
+      uint32_t i;
+      for(i=0; i<page->info.num_keys-1; i++) {
+        if(key<page->branch[i+1].key) break;
+      }
+      page_id = page->branch[i].pagenum;
+    }
+    page = buffer_read_page(table_id, page_id, &page_idx, READ);
+  }
+  
   for(key_index=0; key_index<page->info.num_keys; key_index++) {
     if(page->leafbody.slot[key_index].key == key) break;
   }
-  if(key_index == page->info.num_keys)
-    return 1;
+  if(key_index == page->info.num_keys) return 1;
 
   flag = lock_acquire(table_id, page_id, key, trx_id, SHARED);
   if(flag == DEADLOCK) {
@@ -426,11 +423,22 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
     return 1;
 
   header = buffer_read_page(table_id, 0, &header_idx, READ);
-  root_num = header->root_num;
-  if(!root_num) return 1;
+  page_id = header->root_num;
+  if(!page_id) return 1;
 
-  page_id = find_leaf(table_id, root_num, key);
   page = buffer_read_page(table_id, page_id, &page_idx, READ);
+  while(!page->info.isLeaf) {
+    if(key<page->branch[0].key) page_id = page->leftmost;
+    else {
+      uint32_t i;
+      for(i=0; i<page->info.num_keys-1; i++) {
+        if(key<page->branch[i+1].key) break;
+      }
+      page_id = page->branch[i].pagenum;
+    }
+    page = buffer_read_page(table_id, page_id, &page_idx, READ);
+  }
+  
   for(key_index=0; key_index<page->info.num_keys; key_index++) {
     if(page->leafbody.slot[key_index].key == key) break;
   }
