@@ -2,7 +2,6 @@
 
 #pragma GCC optimize("O3")
 #pragma GCC optimize("unroll-loops")
-#include <stack>
 
 #define SHARED 0
 #define EXCLUSIVE 1
@@ -23,6 +22,7 @@
 #define UNLOCK(X) (pthread_mutex_unlock(&(X)))
 #define WAIT(X, Y) (pthread_cond_wait(&(X), &(Y)))
 #define SIGNAL(X) (pthread_cond_signal(&(X)))
+
 
 lock_manager_t* lock_manager = nullptr;
 trx_manager_t* trx_manager = nullptr;
@@ -116,8 +116,14 @@ trx_t*
 give_trx(int trx_id) 
 {
   LOCK(trx_mutex);
-  if(trx_id>trx_manager->trx_table.size()) return nullptr;
-  if(trx_manager->trx_table[trx_id-1]->state != ACTIVE) return nullptr;
+  if(trx_id>trx_manager->trx_table.size()) {
+    UNLOCK(trx_mutex);
+    return nullptr;
+  }
+  if(trx_manager->trx_table[trx_id-1]->state != ACTIVE) {
+    UNLOCK(trx_mutex);
+    return nullptr;
+  }
   UNLOCK(trx_mutex);
   return trx_manager->trx_table[trx_id-1];
 }
@@ -131,6 +137,7 @@ trx_commit(int trx_id)
   if(!(trx = give_trx(trx_id))) return 0;
 
   lock_release(trx);
+
   for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) {
     delete[] log_it->second->old_value;
     delete log_it->second;
@@ -164,34 +171,34 @@ trx_abort(int trx_id)
 
 
   trx = trx_manager->trx_table[trx_id-1];
-  // for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) 
-  // {
-  //   log = log_it->second;
+  for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) 
+  {
+    log = log_it->second;
 
-  //   table_id = log->table_id;
-  //   key = log->key;
+    table_id = log->table_id;
+    key = log->key;
 
-  //   header_page = buffer_read_page(table_id, 0, &header_idx, READ);
-  //   root_num = header_page->root_num;
-  //   page_id = find_leaf(table_id, root_num, key);
-  //   leaf_page = buffer_read_page(table_id, page_id, &leaf_idx, WRITE);
-  //   for(i=0; i<leaf_page->info.num_keys; i++) {
-  //     if(leaf_page->leafbody.slot[i].key == key) break;
-  //   }
+    header_page = buffer_read_page(table_id, 0, &header_idx, READ);
+    root_num = header_page->root_num;
+    page_id = find_leaf(table_id, root_num, key);
+    leaf_page = buffer_read_page(table_id, page_id, &leaf_idx, WRITE);
+    for(i=0; i<leaf_page->info.num_keys; i++) {
+      if(leaf_page->leafbody.slot[i].key == key) break;
+    }
 
-  //   size = log->val_size;
-  //   leaf_page->leafbody.slot[i].size = size;
-  //   offset = leaf_page->leafbody.slot[i].offset-128;
-  //   for(int k=offset; k<offset+size; k++) {
-  //     leaf_page->leafbody.value[k] = log->old_value[k-offset];
-  //   }
-  //   buffer_write_page(table_id, page_id, leaf_idx, 1);
+    size = log->val_size;
+    leaf_page->leafbody.slot[i].size = size;
+    offset = leaf_page->leafbody.slot[i].offset-128;
+    for(int k=offset; k<offset+size; k++) {
+      leaf_page->leafbody.value[k] = log->old_value[k-offset];
+    }
+    buffer_write_page(table_id, page_id, leaf_idx, 1);
 
-  //   delete[] log->old_value;
-  //   delete log;
-  //   log = nullptr;
-  // }
-  // trx->log_table.clear();
+    delete[] log->old_value;
+    delete log;
+    log = nullptr;
+  }
+  trx->log_table.clear();
   lock_release(trx);
   trx->state = ABORT;
 }
@@ -291,72 +298,57 @@ CONTINUE:
   return 0;
 }
 
+
+int dfs(bool* visit, std::vector<int>& edge, int cur) {
+  int next_trx_id;
+
+  if(!edge[cur]) return 1;
+
+  next_trx_id = edge[cur];
+  if(visit[next_trx_id]) return 0;
+  return 0;
+}
+
 bool
 deadlock_detect(lock_t* lock_obj) 
 {
-  std::stack<int>         S;
-  bool*                   visit;
-  lock_t*                 point;
-  page_t*                 leaf;
-  lock_t*                 tmp;
-  trx_t*                  trx;
-  trx_t*                  my_trx;
-  entry_t*                entry;
-  int                     cur;
-  int                     leaf_idx;
-  int                     my_trx_id;
-  int                     i;
-  int64_t                 key;
+  lock_t*             lock;
+  lock_t*             head;
+  entry_t*            entry;
+  trx_t*              trx;
+  int64_t             key;
+  int                 slower;
+  int                 faster;
+  int                 trx_id;
+  bool                flag;
 
   LOCK(trx_mutex);
-  visit = new bool[trx_manager->trx_cnt + 2];
-  for(int i=0; i<trx_manager->trx_cnt+2; i++) visit[i] = 0;
+  std::vector<int> edge(trx_manager->trx_cnt + 1);
 
-  key = lock_obj->key;
-  point = lock_obj->lock_prev;
-  my_trx_id = lock_obj->owner_trx_id;
-  my_trx = trx_manager->trx_table[my_trx_id-1];
-
-  while(point) {
-    if((point->key == key) && (point->owner_trx_id != my_trx_id))
-      S.push(point->owner_trx_id);
-    point = point->lock_prev;
+  for(int i=0; i<trx_manager->trx_cnt; i++) {
+    trx = trx_manager->trx_table[i];
+    if(trx->state != ACTIVE) continue;
+    if(!(lock = trx->waiting_lock)) continue;
+    key = lock->key;
+    entry = lock->sent_point;
+    head = entry->head;
+    while(head && head->key!=key)
+      head = head->lock_next;
+    edge[lock->owner_trx_id] = head->owner_trx_id;
   }
 
-  while(!S.empty()) 
-  {
-    cur = S.top(); S.pop();
-    if(visit[cur]) continue;
-    visit[cur] = true;
-
-    trx = trx_manager->trx_table[cur-1];
-    if(!(point = trx_manager->trx_table[cur-1]->waiting_lock))
-      continue;
-    
-    key = point->key;
-    entry = point->sent_point;
-    tmp = entry->head;
-    while(tmp) {
-      if(tmp->key == key && tmp->owner_trx_id == my_trx_id) {
-        delete[] visit;
-        UNLOCK(trx_mutex);
-        return true;
+  flag = false;
+  slower = faster = lock_obj->owner_trx_id;
+  while (slower && faster && edge[faster]) {
+      slower = edge[slower];
+      faster = edge[edge[faster]];
+      if(slower == faster) {
+        flag = true;
+        break;
       }
-      tmp = tmp->lock_next;
-    }
-
-    point = point->lock_prev;
-    while(point) {
-      if((point->key == key) && (!visit[point->owner_trx_id])) {
-          S.push(point->owner_trx_id);
-      }
-      point = point->lock_prev;
-    }
   }
-
   UNLOCK(trx_mutex);
-  delete[] visit;
-  return false;
+  return flag;
 }
 
 int 
@@ -398,10 +390,6 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
     return 1;
   }
 
-  if(trx->waiting_lock) {
-    trx->waiting_lock->lock_state = ACQUIRED;
-    trx->waiting_lock = nullptr;
-  }
   page = buffer_read_page(table_id, page_id, &page_idx, READ);
   offset = page->leafbody.slot[key_index].offset-128;
   size = page->leafbody.slot[key_index].size;
@@ -435,9 +423,9 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
 
   if(!isValid(table_id))
     return 1;
+  if(!(trx = give_trx(trx_id))) 
+    return 1;
 
-  if(!(trx = give_trx(trx_id))) return 1;
-  
   header = buffer_read_page(table_id, 0, &header_idx, READ);
   root_num = header->root_num;
   if(!root_num) return 1;
@@ -454,10 +442,6 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
   if(flag == DEADLOCK) {
     trx_abort(trx_id);
     return 1;
-  }
-  if(trx->waiting_lock) {
-    trx->waiting_lock->lock_state = ACQUIRED;
-    trx->waiting_lock = nullptr;
   }
 
   page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
@@ -476,18 +460,18 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
 
   buffer_write_page(table_id, page_id, page_idx, 1);
 
-  // log_it = trx->log_table.find({table_id, key});
-  // if(log_it == trx->log_table.end()) {
-  //   log = new log_t;
-  //   log->old_value = new char[size+1];
-  //   log->table_id = table_id;
-  //   log->key = key;
-  //   log->val_size = size;
-  //   for(int k=0; k<size; k++) {
-  //     log->old_value[k] = old_value[k];
-  //   }
-  //   trx->log_table[{table_id, key}] = log;
-  // }
+  log_it = trx->log_table.find({table_id, key});
+  if(log_it == trx->log_table.end()) {
+    log = new log_t;
+    log->old_value = new char[size+1];
+    log->table_id = table_id;
+    log->key = key;
+    log->val_size = size;
+    for(int k=0; k<size; k++) {
+      log->old_value[k] = old_value[k];
+    }
+    trx->log_table[{table_id, key}] = log;
+  }
   return 0;
 }
 
@@ -539,10 +523,9 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
     append_lock(entry, new_lock, trx);
     lock_manager->lock_table[{table_id, page_id}] = entry;
     UNLOCK(lock_mutex);
-
     return NORMAL;
   }
-
+  
   entry = lock_it->second;
   point = entry->head;
   while(point) 
@@ -563,6 +546,8 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
           return DEADLOCK;
         }
         WAIT(new_lock->cond, lock_mutex);
+        new_lock->lock_state = ACQUIRED;
+        trx->waiting_lock = nullptr;
         UNLOCK(lock_mutex);
         return NORMAL;
       }
@@ -591,20 +576,12 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
       }
 
       if(mine) {
-        if(find_wait) {
-          trx->waiting_lock = new_lock;
-          new_lock->lock_state = WAITING;
-          append_lock(entry, new_lock, trx);
-          if(deadlock_detect(new_lock)) {
-            UNLOCK(lock_mutex);
-            return DEADLOCK;
-          }
-          WAIT(new_lock->cond, lock_mutex);
-          UNLOCK(lock_mutex);
-          return NORMAL;
-        }
-        
         delete new_lock;
+        if(find_wait) {
+          trx->waiting_lock = nullptr;
+          UNLOCK(lock_mutex);
+          return DEADLOCK;
+        }
         if(!cnt) {
           trx->waiting_lock = nullptr;
           my_lock->lock_state = ACQUIRED;
@@ -618,9 +595,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
         if(my_lock->lock_next) my_lock->lock_next->lock_prev = my_lock->lock_prev;
         if(my_lock->lock_prev) my_lock->lock_prev->lock_next = my_lock->lock_next;
 
-        trx->waiting_lock = my_lock;
-        my_lock->lock_mode = EXCLUSIVE;
-        my_lock->lock_state = WAITING;
         if(!entry->head) {
           entry->head = entry->tail = my_lock;
           my_lock->lock_next = my_lock->lock_prev = nullptr;
@@ -630,11 +604,18 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
           my_lock->lock_next = nullptr;
           entry->tail = my_lock;
         }
+
+        trx->waiting_lock = my_lock;
+        my_lock->lock_mode = EXCLUSIVE;
+        my_lock->lock_state = WAITING;
         if(deadlock_detect(my_lock)) {
           UNLOCK(lock_mutex);
           return DEADLOCK;
         }
         WAIT(my_lock->cond, lock_mutex);
+        my_lock->lock_state = ACQUIRED;
+        trx->waiting_lock = nullptr;
+        UNLOCK(lock_mutex);
         return NORMAL;
       }
 
@@ -654,6 +635,8 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
         return DEADLOCK;
       }
       WAIT(new_lock->cond, lock_mutex);
+      new_lock->lock_state = ACQUIRED;
+      trx->waiting_lock = nullptr;
       UNLOCK(lock_mutex);
       return NORMAL;
     }
