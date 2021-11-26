@@ -247,8 +247,7 @@ lock_release(trx_t* trx)
     if(point->lock_state == WAITING)
       goto CONTINUE;
 
-    if(lock_mode == SHARED) 
-    {
+    if(lock_mode == SHARED) {
       cnt = 0;
       tmp = entry->head;
       while(tmp) {
@@ -267,9 +266,8 @@ lock_release(trx_t* trx)
         tmp = tmp->lock_next;
       }
     }
-
-    else 
-    {
+    
+    else {
       flag = 0;
       while(lock) {
         if(lock->key == key) {
