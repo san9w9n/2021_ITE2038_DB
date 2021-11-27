@@ -263,7 +263,7 @@ lock_release(trx_t* trx)
       continue;
     }
     
-    BROADCAST(point->cond);
+    if(point->lock_state != WAITING) BROADCAST(point->cond);
 
     del = point;
     point = point->trx_next;
@@ -514,6 +514,7 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
             reacquire = true; 
             conflict = true;
             WAIT(point->cond, lock_mutex);
+            trx->wait_trx_id = 0;
             break;     
           }
         }
@@ -550,6 +551,7 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
           reacquire = true;
           conflict = true;
           WAIT(point->cond, lock_mutex);
+          trx->wait_trx_id = 0;
           break;  
         }
       }
