@@ -57,7 +57,7 @@ typedef std::unordered_map<log_key_t, log_t* , pair_hash> log_table_t;
 typedef struct trx_t {
     log_table_t log_table;
     lock_t* trx_next;
-    lock_t* waiting_lock;
+    int wait_trx_id;
     int state;
 } trx_t;
 typedef std::vector<trx_t*> trx_table_t;
@@ -81,7 +81,7 @@ trx_t* give_trx(int trx_id);
 int trx_commit(int trx_id);
 void trx_abort(int trx_id);
 int lock_release(trx_t* trx);
-bool deadlock_detect(lock_t* lock_obj);
+bool deadlock_detect(int trx_id);
 int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int trx_id);
 int db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, uint16_t* old_val_size, int trx_id);
 void append_lock(entry_t* entry, lock_t* lock, trx_t* trx);
