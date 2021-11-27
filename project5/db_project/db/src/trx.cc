@@ -292,7 +292,7 @@ deadlock_detect(int trx_id)
       flag = false;
       break;
     }
-    if(visit.find(target_id) != visit.end() && visit[target_id]) {
+    if(visit.find(target_id) != visit.end()) {
       flag = true;
       if(target_id!=trx_id) flag = false;
       break;
@@ -568,13 +568,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
       point = point->lock_next;
     }
     if(!conflict) {
-      if(MY_SX) {
-        if(!reacquire) delete new_lock;
-        my_lock->lock_mode = EXCLUSIVE;
-        trx->wait_trx_id = 0;
-        UNLOCK(lock_mutex);
-        return NORMAL;
-      }
       trx->wait_trx_id = 0;
       new_lock->lock_state = ACQUIRED;
       if(!reacquire) append_lock(entry, new_lock, trx);
