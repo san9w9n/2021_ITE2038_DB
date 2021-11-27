@@ -294,6 +294,7 @@ deadlock_detect(int trx_id)
     }
     if(visit.find(target_id) != visit.end() && visit[target_id]) {
       flag = true;
+      if(target_id!=trx_id) flag = false;
       break;
     }
     visit[target_id] = 1;
@@ -560,7 +561,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
             return DEADLOCK;
           }
           WAIT(point->cond, lock_mutex);
-          trx->wait_trx_id = 0; 
           conflict = true;
           break;  
         }
