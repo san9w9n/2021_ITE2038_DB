@@ -3,6 +3,8 @@
 #pragma GCC optimize("O3")
 #pragma GCC optimize("unroll-loops")
 
+#include <stack>
+
 #define SHARED 0
 #define EXCLUSIVE 1
 
@@ -42,7 +44,6 @@ give_lock(int64_t key, int trx_id, bool lock_mode)
   lock->key = key;
   lock->owner_trx_id = trx_id;
   lock->lock_mode = lock_mode;
-  lock->lock_state = WAITING;
 
   return lock;
 }
@@ -108,7 +109,7 @@ trx_begin(void)
 
   LOCK(trx_mutex);
   trx_id = ++trx_manager->trx_cnt;
-  trx = new trx_t();
+  trx = new trx_t;
   trx->state = ACTIVE;
   trx->trx_next = nullptr;
   trx->wait_trx_id = 0;
@@ -234,6 +235,7 @@ lock_release(trx_t* trx)
   int64_t                 table_id;
   pagenum_t               page_id;
   page_t*                 leaf;
+  std::stack<lock_t*> s;
 
   LOCK(lock_mutex);
   point = trx->trx_next;
@@ -250,16 +252,17 @@ lock_release(trx_t* trx)
     if(point->lock_next) point->lock_next->lock_prev = point->lock_prev;
     if(point->lock_prev) point->lock_prev->lock_next = point->lock_next;
 
-    BROADCAST(point->cond);
-    if(!entry->head) {
-      delete entry;
-      lock_manager->lock_table.erase({table_id, page_id});
-    }
-    del = point;
+    s.push(point);
+    
     point = point->trx_next;
-    trx->trx_next = point;
-    delete del;
   }
+
+  while(!s.empty()) {
+    BROADCAST(s.top()->cond);
+    delete s.top();
+    s.pop();
+  }
+
   UNLOCK(lock_mutex);
 
   return 0;
@@ -426,7 +429,6 @@ append_lock(entry_t* entry, lock_t* lock, trx_t* trx)
 {
   lock_t*     tail;
 
-  lock->sent_point = entry;
   if(!entry->head) {
     entry->head = entry->tail = lock;
     lock->lock_prev = lock->lock_next = nullptr;
@@ -437,7 +439,6 @@ append_lock(entry_t* entry, lock_t* lock, trx_t* trx)
     entry->tail = lock;
   }
   
-  LOCK(trx_mutex);
   if(!trx->trx_next) {
     trx->trx_next = lock;
     lock->trx_next = nullptr;
@@ -445,7 +446,6 @@ append_lock(entry_t* entry, lock_t* lock, trx_t* trx)
     lock->trx_next = trx->trx_next;
     trx->trx_next = lock;
   }
-  UNLOCK(trx_mutex);
 }
 
 int
@@ -462,12 +462,11 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
   LOCK(lock_mutex);
 
   trx = trx_manager->trx_table[trx_id-1];
-
   new_lock = give_lock(key, trx_id, lock_mode);
   lock_it = lock_manager->lock_table.find({table_id, page_id});
   if(lock_it == lock_manager->lock_table.end()) {
     entry = give_entry(table_id, page_id);
-    new_lock->lock_state = ACQUIRED;
+    new_lock->sent_point = entry;
     trx->wait_trx_id = 0;
     append_lock(entry, new_lock, trx);
     lock_manager->lock_table[{table_id, page_id}] = entry;
@@ -475,11 +474,12 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
     return NORMAL;
   }
   entry = lock_it->second;
+  new_lock->sent_point = entry;
 
   point = entry->head;
   while(point) {
     if((point->key == key) && (point->owner_trx_id == trx_id)) { 
-      if(point->lock_mode >= lock_mode) {
+      if(point->lock_mode!=SHARED && lock_mode!=EXCLUSIVE) {
         delete new_lock;
         trx->wait_trx_id = 0;
         UNLOCK(lock_mutex);
@@ -499,7 +499,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
       {
         if(point->lock_mode == EXCLUSIVE || lock_mode == EXCLUSIVE) {
           trx->wait_trx_id = point->owner_trx_id;
-          new_lock->lock_state = WAITING;
           if(deadlock_detect(trx_id)) {
             UNLOCK(lock_mutex);
             return DEADLOCK;
@@ -514,9 +513,9 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
     }
     if(!conflict) {
       trx->wait_trx_id = 0;
-      new_lock->lock_state = ACQUIRED;
       UNLOCK(lock_mutex);
       return NORMAL;
     }
   }
+  
 }
