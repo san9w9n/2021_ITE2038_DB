@@ -283,7 +283,6 @@ deadlock_detect(int trx_id)
   int                 target_id;
   std::unordered_map<int, bool> visit;
 
-  LOCK(trx_mutex);
   visit[trx_id] = 1;
   trx_table_t& v = trx_manager->trx_table; 
   target_id = v[trx_id-1]->wait_trx_id;
@@ -294,13 +293,13 @@ deadlock_detect(int trx_id)
     }
     if(visit.find(target_id) != visit.end()) {
       flag = true;
-      if(target_id!=trx_id) flag = false;
+      if(target_id!=trx_id) 
+        flag = false;
       break;
     }
     visit[target_id] = 1;
     target_id = v[target_id-1]->wait_trx_id;
   }
-  UNLOCK(trx_mutex);
   
   return flag;
 }
@@ -322,8 +321,6 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
 
   if(!isValid(table_id))
     return 1;
-
-  if(!(trx = give_trx(trx_id))) return 1;
 
   header = buffer_read_page(table_id, 0, &header_idx, READ);
   root_num = header->root_num;
@@ -377,8 +374,6 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
 
   if(!isValid(table_id))
     return 1;
-  if(!(trx = give_trx(trx_id))) 
-    return 1;
 
   header = buffer_read_page(table_id, 0, &header_idx, READ);
   root_num = header->root_num;
@@ -414,6 +409,7 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
 
   buffer_write_page(table_id, page_id, page_idx, 1);
 
+  trx = trx_manager->trx_table[trx_id-1];
   log_it = trx->log_table.find({table_id, key});
   if(log_it == trx->log_table.end()) {
     log = new log_t;
@@ -426,6 +422,8 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
     }
     trx->log_table[{table_id, key}] = log;
   }
+  delete[] old_value;
+  
   return 0;
 }
 
@@ -457,15 +455,11 @@ append_lock(entry_t* entry, lock_t* lock, trx_t* trx)
 int
 lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool lock_mode)
 {
-  int           cnt;
   entry_t*      entry;
   lock_t*       point;
   lock_t*       new_lock;
-  lock_t*       my_lock;
   trx_t*        trx;
   bool          reacquire;
-  bool          mine;
-  bool          MY_SX;
   bool          conflict;
   lock_table_t::iterator lock_it;
 
@@ -486,19 +480,15 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
   }
   entry = lock_it->second;
 
-  MY_SX = false;
   point = entry->head;
   while(point) {
-    if(point->key == key && point->owner_trx_id == trx_id) { 
+    if((point->key == key) && (point->owner_trx_id == trx_id)) { 
       if(point->lock_mode >= lock_mode) {
         delete new_lock;
         trx->wait_trx_id = 0;
         UNLOCK(lock_mutex);
         return NORMAL;
-      } else {
-        my_lock = point;
-        MY_SX = true;
-      }
+      } 
     }   
     point = point->lock_next;
   }
@@ -517,14 +507,13 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
             trx->wait_trx_id = point->owner_trx_id;
             new_lock->lock_state = WAITING;
             if(!reacquire) append_lock(entry, new_lock, trx);
-            reacquire = true; 
             if(deadlock_detect(trx_id)) {
-              if(!reacquire) delete new_lock;
               UNLOCK(lock_mutex);
               return DEADLOCK;
             }
-            WAIT(point->cond, lock_mutex);  
+            reacquire = true; 
             conflict = true;
+            WAIT(point->cond, lock_mutex);
             break;     
           }
         }
@@ -548,20 +537,19 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
     point = entry->head;
     while(point) 
     {
-      if(reacquire && (point == new_lock)) break;
+      if((reacquire) && (point == new_lock)) break;
       if(point->key == key) {
         if(point->owner_trx_id != trx_id) {
           trx->wait_trx_id = point->owner_trx_id;
           new_lock->lock_state = WAITING;
           if(!reacquire) append_lock(entry, new_lock, trx);
-          reacquire = true; 
           if(deadlock_detect(trx_id)) {
-            if(!reacquire) delete new_lock;
             UNLOCK(lock_mutex);
             return DEADLOCK;
           }
-          WAIT(point->cond, lock_mutex);
+          reacquire = true;
           conflict = true;
+          WAIT(point->cond, lock_mutex);
           break;  
         }
       }
@@ -575,5 +563,4 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
       return NORMAL;
     }
   }
-
 }
