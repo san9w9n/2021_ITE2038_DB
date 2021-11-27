@@ -72,7 +72,12 @@ int
 shutdown_db() 
 {
   if(lock_manager) delete lock_manager;
-  if(trx_manager) delete trx_manager;
+  if(trx_manager) {
+    for(int i=0; i<trx_manager->trx_table.size(); i++)
+      delete trx_manager->trx_table[i];
+    trx_manager->trx_table.clear();
+    delete trx_manager;
+  }
   return shutdown_buffer();
 }
 
@@ -276,23 +281,28 @@ lock_release(trx_t* trx)
 bool
 deadlock_detect(int trx_id) 
 {
-  int                 slower;
-  int                 faster;
   bool                flag;
+  int                 target_id;
+  std::unordered_map<int, bool> visit;
 
   LOCK(trx_mutex);
-  trx_table_t& v = trx_manager->trx_table;
-  flag = false;
-  slower = faster = trx_id;
-  while (slower>=1 && faster>=1 && v[faster-1]->wait_trx_id>=1) {
-    slower = v[slower-1]->wait_trx_id;
-    faster = v[(v[faster-1]->wait_trx_id)-1]->wait_trx_id;
-    if(slower == faster) {
+  visit[trx_id] = 1;
+  trx_table_t& v = trx_manager->trx_table; 
+  target_id = v[trx_id-1]->wait_trx_id;
+  while(1) {
+    if(!target_id) {
+      flag = false;
+      break;
+    }
+    if(visit.find(target_id) != visit.end() && visit[target_id]) {
       flag = true;
       break;
     }
+    visit[target_id] = 1;
+    target_id = v[target_id-1]->wait_trx_id;
   }
   UNLOCK(trx_mutex);
+  
   return flag;
 }
 
