@@ -32,7 +32,7 @@ pthread_mutex_t lock_mutex;
 pthread_mutex_t trx_mutex;
 
 lock_t*
-give_lock(int64_t key, int trx_id, int lock_mode)
+give_lock(int64_t key, int trx_id, bool lock_mode)
 {
   lock_t*                 lock;
 
@@ -141,13 +141,6 @@ trx_commit(int trx_id)
   trx_t*                  trx;
   trx_table_t::iterator   it;
 
-  LOCK(trx_mutex);
-  if(trx_id>trx_manager->trx_table.size()) {
-    UNLOCK(trx_mutex);
-    return 0;
-  }
-  UNLOCK(trx_mutex);
-
   if(trx_manager->trx_table[trx_id-1]->state != ACTIVE)
     return 0;
   trx = trx_manager->trx_table[trx_id-1];
@@ -185,34 +178,34 @@ trx_abort(int trx_id)
   log_t*                  log;
 
   trx = trx_manager->trx_table[trx_id-1];
-  for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) 
-  {
-    log = log_it->second;
+  // for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) 
+  // {
+  //   log = log_it->second;
 
-    table_id = log->table_id;
-    key = log->key;
+  //   table_id = log->table_id;
+  //   key = log->key;
 
-    header_page = buffer_read_page(table_id, 0, &header_idx, READ);
-    root_num = header_page->root_num;
-    page_id = find_leaf(table_id, root_num, key);
-    leaf_page = buffer_read_page(table_id, page_id, &leaf_idx, WRITE);
-    for(i=0; i<leaf_page->info.num_keys; i++) {
-      if(leaf_page->leafbody.slot[i].key == key) break;
-    }
+  //   header_page = buffer_read_page(table_id, 0, &header_idx, READ);
+  //   root_num = header_page->root_num;
+  //   page_id = find_leaf(table_id, root_num, key);
+  //   leaf_page = buffer_read_page(table_id, page_id, &leaf_idx, WRITE);
+  //   for(i=0; i<leaf_page->info.num_keys; i++) {
+  //     if(leaf_page->leafbody.slot[i].key == key) break;
+  //   }
 
-    size = log->val_size;
-    leaf_page->leafbody.slot[i].size = size;
-    offset = leaf_page->leafbody.slot[i].offset-128;
-    for(int k=offset; k<offset+size; k++) {
-      leaf_page->leafbody.value[k] = log->old_value[k-offset];
-    }
-    buffer_write_page(table_id, page_id, leaf_idx, 1);
+  //   size = log->val_size;
+  //   leaf_page->leafbody.slot[i].size = size;
+  //   offset = leaf_page->leafbody.slot[i].offset-128;
+  //   for(int k=offset; k<offset+size; k++) {
+  //     leaf_page->leafbody.value[k] = log->old_value[k-offset];
+  //   }
+  //   buffer_write_page(table_id, page_id, leaf_idx, 1);
 
-    delete[] log->old_value;
-    delete log;
-    log = nullptr;
-  }
-  trx->log_table.clear();
+  //   delete[] log->old_value;
+  //   delete log;
+  //   log = nullptr;
+  // }
+  // trx->log_table.clear();
   trx->state = ABORT;
 
   lock_release(trx);
@@ -252,15 +245,11 @@ lock_release(trx_t* trx)
     if(point->lock_next) point->lock_next->lock_prev = point->lock_prev;
     if(point->lock_prev) point->lock_prev->lock_next = point->lock_next;
 
-    s.push(point);
+    BROADCAST(point->cond);
     
+    del = point;
     point = point->trx_next;
-  }
-
-  while(!s.empty()) {
-    BROADCAST(s.top()->cond);
-    delete s.top();
-    s.pop();
+    delete del;
   }
 
   UNLOCK(lock_mutex);
@@ -275,9 +264,11 @@ deadlock_detect(int trx_id)
   int                 target_id;
 
   LOCK(trx_mutex);
-  std::vector<int> visit(trx_manager->trx_cnt + 5);
+  std::vector<int> visit(trx_manager->trx_cnt + 1);
+  trx_table_t& v = trx_manager->trx_table;
   visit[trx_id] = 1;
-  target_id = trx_manager->trx_table[trx_id-1]->wait_trx_id;
+  target_id = v[trx_id-1]->wait_trx_id;
+  
   while(1) {
     if(!target_id) {
       flag = false;
@@ -285,12 +276,13 @@ deadlock_detect(int trx_id)
     }
     if(visit[target_id]) {
       flag = true;
-      if(target_id!=trx_id) 
+      if(target_id!=trx_id) {
         flag = false;
+      }
       break;
     }
     visit[target_id] = 1;
-    target_id = trx_manager->trx_table[target_id-1]->wait_trx_id;
+    target_id = v[target_id-1]->wait_trx_id;
   }
   UNLOCK(trx_mutex);
   
@@ -406,20 +398,20 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
 
   buffer_write_page(table_id, page_id, page_idx, 1);
 
-  trx = trx_manager->trx_table[trx_id-1];
-  log_it = trx->log_table.find({table_id, key});
-  if(log_it == trx->log_table.end()) {
-    log = new log_t;
-    log->old_value = new char[size+1];
-    log->table_id = table_id;
-    log->key = key;
-    log->val_size = size;
-    for(int k=0; k<size; k++) {
-      log->old_value[k] = old_value[k];
-    }
-    trx->log_table[{table_id, key}] = log;
-  }
-  delete[] old_value;
+  // trx = trx_manager->trx_table[trx_id-1];
+  // log_it = trx->log_table.find({table_id, key});
+  // if(log_it == trx->log_table.end()) {
+  //   log = new log_t;
+  //   log->old_value = new char[size+1];
+  //   log->table_id = table_id;
+  //   log->key = key;
+  //   log->val_size = size;
+  //   for(int k=0; k<size; k++) {
+  //     log->old_value[k] = old_value[k];
+  //   }
+  //   trx->log_table[{table_id, key}] = log;
+  // }
+  // delete[] old_value;
   
   return 0;
 }
@@ -449,7 +441,7 @@ append_lock(entry_t* entry, lock_t* lock, trx_t* trx)
 }
 
 int
-lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, int lock_mode)
+lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool lock_mode)
 {
   entry_t*      entry;
   lock_t*       point;
