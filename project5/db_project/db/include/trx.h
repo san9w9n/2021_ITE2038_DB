@@ -24,9 +24,11 @@ typedef struct lock_t {
     lock_t* lock_next;
     lock_t* trx_next;
     entry_t* sent_point;
+    int64_t key;
     uint64_t bitmap;
     int owner_trx_id;
     bool lock_mode;
+    bool lock_state;
 } lock_t;
 
 typedef struct entry_t {
@@ -68,7 +70,7 @@ typedef struct trx_manager_t {
 
 typedef std::unordered_map<int, bool> visit_t;
 
-lock_t* give_lock(uint64_t bitmap, int trx_id, bool lock_mode);
+lock_t* give_lock(int64_t key, int trx_id, bool lock_mode);
 entry_t* give_entry(int64_t table_id, pagenum_t page_id);
 int init_db(int num_buf);
 int shutdown_db();
@@ -83,6 +85,6 @@ bool deadlock_detect(int trx_id);
 int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int trx_id);
 int db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, uint16_t* old_val_size, int trx_id);
 void append_lock(entry_t* entry, lock_t* lock, trx_t* trx);
-int lock_acquire(int64_t table_id, pagenum_t page_id, int kindex, int trx_id, bool lock_mode);
+int lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool lock_mode);
 
 #endif
