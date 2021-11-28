@@ -3,6 +3,9 @@
 #define LOCK(X) pthread_mutex_lock(&(X));
 #define UNLOCK(X) pthread_mutex_unlock(&(X));
 
+#pragma gcc optimization("O3");
+#pragma gcc optimization("unroll-loops");
+
 buffer_pool_t* buffer = NULL;
 pthread_mutex_t buf_mutex;
 
