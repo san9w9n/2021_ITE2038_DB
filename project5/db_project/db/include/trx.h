@@ -2,8 +2,7 @@
 #define __TRX_H__
 
 #include <bpt.h>
-#include <unordered_map>
-#include <vector>
+
 typedef uint64_t pagenum_t;
 
 // for lock manager
@@ -66,8 +65,6 @@ lock_t* give_lock(int64_t key, int trx_id, bool lock_mode);
 entry_t* give_entry(int64_t table_id, pagenum_t page_id);
 int init_db(int num_buf);
 int shutdown_db();
-int init_lock_table(void);
-int init_trx_table(void);
 int trx_begin(void);
 trx_t* give_trx(int trx_id);
 int trx_commit(int trx_id);

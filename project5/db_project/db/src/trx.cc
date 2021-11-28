@@ -1,8 +1,5 @@
 #include "trx.h"
 
-#include <stack>
-#include <iostream>
-
 #define SHARED 0
 #define EXCLUSIVE 1
 
@@ -62,8 +59,8 @@ give_entry(int64_t table_id, pagenum_t page_id)
 int 
 init_db(int num_buf)
 {
-  init_lock_table();
-  init_trx_table();
+  lock_mutex = PTHREAD_MUTEX_INITIALIZER;
+  trx_mutex = PTHREAD_MUTEX_INITIALIZER;
   return init_buffer(num_buf);
 }
 
@@ -75,20 +72,6 @@ shutdown_db()
     delete trx_table[i];
   trx_table.clear();
   return shutdown_buffer();
-}
-
-int
-init_lock_table(void)
-{
-  lock_mutex = PTHREAD_MUTEX_INITIALIZER;
-  return 0;
-}
-
-int
-init_trx_table(void)
-{
-  trx_mutex = PTHREAD_MUTEX_INITIALIZER;
-  return 0;
 }
 
 int
@@ -134,11 +117,11 @@ trx_commit(int trx_id)
   if(trx_table[trx_id-1]->state != ACTIVE)
     return 0;
   trx = trx_table[trx_id-1];
-  for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) {
-    delete[] log_it->second->old_value;
-    delete log_it->second;
-  }
-  trx->log_table.clear();
+  // for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) {
+  //   delete[] log_it->second->old_value;
+  //   delete log_it->second;
+  // }
+  // trx->log_table.clear();
   trx->state = COMMIT;
   
   lock_release(trx);
@@ -213,22 +196,13 @@ lock_release(trx_t* trx)
   int                     flag;
   int                     leaf_idx;
   int                     cnt;
-  int64_t                 key;
-  uint64_t                bitmap;
-  int64_t                 table_id;
-  pagenum_t               page_id;
   page_t*                 leaf;
-  std::stack<lock_t*> s;
 
   LOCK(lock_mutex);
   point = trx->trx_next;
   while(point) 
   {
     entry = point->sent_point;
-    table_id = entry->table_id;
-    page_id = entry->page_id;
-    key = point->key;
-    lock_mode = point->lock_mode;
 
     if(entry->head == point) entry->head = point->lock_next;
     if(entry->tail == point) entry->tail = point->lock_prev;
@@ -236,7 +210,10 @@ lock_release(trx_t* trx)
     if(point->lock_prev) point->lock_prev->lock_next = point->lock_next;
 
     BROADCAST(point->cond);
-    
+    if(!entry->head) {
+      lock_table.erase({entry->table_id, entry->page_id});
+      delete entry;
+    }
     del = point;
     point = point->trx_next;
     delete del;
@@ -375,9 +352,9 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
   offset = page->leafbody.slot[key_index].offset-128;
   size = page->leafbody.slot[key_index].size;
   *old_val_size = size;
-  old_value = new char[size + 1];
-  for(int i=offset, j=0; i<offset+size; j++,i++)
-    old_value[j] = page->leafbody.value[i];
+  // old_value = new char[size + 1];
+  // for(int i=offset, j=0; i<offset+size; j++,i++)
+  //   old_value[j] = page->leafbody.value[i];
 
   for(int i=offset, j=0; i<offset+new_val_size; j++, i++)
     page->leafbody.value[i] = values[j];
@@ -400,7 +377,7 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
   //   }
   //   trx->log_table[{table_id, key}] = log;
   // }
-  delete[] old_value;
+  // delete[] old_value;
   
   return 0;
 }
@@ -419,14 +396,8 @@ append_lock(entry_t* entry, lock_t* lock, trx_t* trx)
     lock->lock_prev = tail;
     entry->tail = lock;
   }
-  
-  if(!trx->trx_next) {
-    trx->trx_next = lock;
-    lock->trx_next = nullptr;
-  } else {
-    lock->trx_next = trx->trx_next;
-    trx->trx_next = lock;
-  }
+  lock->trx_next = trx->trx_next;
+  trx->trx_next = lock;
 }
 
 int
@@ -435,12 +406,9 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
   entry_t*      entry;
   lock_t*       point;
   lock_t*       new_lock;
-  lock_t*       conflict_lock;
   trx_t*        trx;
   bool          reacquire;
   bool          conflict;
-  bool          SX;
-  lock_t*       SX_lock;
   lock_table_t::iterator lock_it;
 
   LOCK(lock_mutex);
@@ -462,7 +430,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
   
 
   point = entry->head;
-  SX = false;
   while(point) {
     if((point->key == key) && (point->owner_trx_id == trx_id)) { 
       if(point->lock_mode>=lock_mode) {
@@ -470,9 +437,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
         trx->wait_trx_id = 0;
         UNLOCK(lock_mutex);
         return NORMAL;
-      } else {
-        SX = true;
-        SX_lock = point;
       }
     } 
     point = point->lock_next;
@@ -501,15 +465,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
       point = point->lock_next;
     } 
     if(!conflict) {
-      if(SX) {
-        if(entry->head == new_lock) entry->head = new_lock->lock_next;
-        if(entry->tail == new_lock) entry->tail = new_lock->lock_prev;
-        if(new_lock->lock_next) new_lock->lock_next->lock_prev = new_lock->lock_prev;
-        if(new_lock->lock_prev) new_lock->lock_prev->lock_next = new_lock->lock_next;
-        trx->trx_next = new_lock->trx_next;
-        delete new_lock;
-        SX_lock->lock_mode = EXCLUSIVE;
-      }
       trx->wait_trx_id = 0;
       UNLOCK(lock_mutex);
       return NORMAL;

@@ -1,7 +1,19 @@
 #ifndef __FILE_H__
 #define __FILE_H__
 
+#pragma gcc optimization("O3");
+#pragma gcc optimization("unroll-loops");
+
+
 #include <stdint.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include "pthread.h"
+#include <unordered_map>
+#include <vector>
+
 #define MAX_TABLES 20
 #define PGSIZE 4096
 typedef uint64_t pagenum_t;

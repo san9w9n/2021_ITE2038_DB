@@ -1,7 +1,6 @@
 #ifndef __BUFFER_H__
 #define __BUFFER_H__
 #include "file.h"
-#include "pthread.h"
 
 #define READ 0
 #define WRITE 1

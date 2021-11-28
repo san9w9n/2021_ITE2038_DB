@@ -1,10 +1,5 @@
 #include "file.h"
 
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-
 #define READ 0
 #define WRITE 1
 #define PGSIZE 4096
