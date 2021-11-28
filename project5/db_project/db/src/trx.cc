@@ -478,7 +478,7 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int kindex, int trx_id, bool l
 
   point = entry->head;
   while(point) {
-    if((point->bitmap & bitmap) && (point->owner_trx_id == trx_id)) { 
+    if(((point->bitmap & bitmap) > 0) && (point->owner_trx_id == trx_id)) { 
       if(point->lock_mode!=SHARED && lock_mode!=EXCLUSIVE) {
         delete new_lock;
         trx->wait_trx_id = 0;
@@ -496,7 +496,7 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int kindex, int trx_id, bool l
     point = entry->head;
     while(point) {
       if(point == new_lock) break;
-      if((point->bitmap & bitmap) && (point->owner_trx_id != trx_id)) {
+      if(((point->bitmap & bitmap) > 0) && (point->owner_trx_id != trx_id)) {
         if(point->lock_mode == EXCLUSIVE || lock_mode == EXCLUSIVE) {
           trx->wait_trx_id = point->owner_trx_id;
           if(deadlock_detect(trx_id)) {
