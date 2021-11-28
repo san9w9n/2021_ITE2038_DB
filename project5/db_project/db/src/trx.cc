@@ -402,6 +402,7 @@ append_lock(entry_t* entry, lock_t* lock, trx_t* trx)
     lock->lock_prev = tail;
     entry->tail = lock;
   }
+  
   lock->trx_next = trx->trx_next;
   trx->trx_next = lock;
 }
