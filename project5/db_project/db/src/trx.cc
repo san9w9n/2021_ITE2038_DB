@@ -117,15 +117,19 @@ trx_commit(int trx_id)
   trx_t*                  trx;
   trx_table_t::iterator   it;
 
+  LOCK(lock_mutex);
+
   if(trx_table[trx_id-1]->state != ACTIVE)
     return 0;
   trx = trx_table[trx_id-1];
+  trx->wait_trx_id = 0;
   for(auto log_it = trx->log_table.begin(); log_it != trx->log_table.end(); log_it++) {
     delete[] log_it->second->old_value;
     delete log_it->second;
   }
   trx->log_table.clear();
   trx->state = COMMIT;
+
   
   lock_release(trx);
 
@@ -181,6 +185,7 @@ trx_abort(int trx_id)
     delete log;
     log = nullptr;
   }
+  trx->wait_trx_id = 0;
   trx->log_table.clear();
   trx->state = ABORT;
 
@@ -201,7 +206,6 @@ lock_release(trx_t* trx)
   int                     cnt;
   page_t*                 leaf;
 
-  LOCK(lock_mutex);
   point = trx->trx_next;
   while(point) 
   {
@@ -460,7 +464,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
       if(point->lock_mode == EXCLUSIVE || lock_mode == EXCLUSIVE) {
         trx->wait_trx_id = point->owner_trx_id;
         if(deadlock_detect(trx_id)) {
-          UNLOCK(lock_mutex);
           return DEADLOCK;
         }
         WAIT(point->cond, lock_mutex);
