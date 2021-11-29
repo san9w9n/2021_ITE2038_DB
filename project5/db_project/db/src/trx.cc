@@ -11,7 +11,6 @@
 
 #define NORMAL 0
 #define DEADLOCK 1
-#define CHECK_IMPL 2
 
 #define ACTIVE 0
 #define COMMIT 1
@@ -413,7 +412,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
   lock_t*       point;
   lock_t*       new_lock;
   trx_t*        trx;
-  bool          reacquire;
   bool          conflict;
   lock_table_t::iterator lock_it;
 
@@ -434,7 +432,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int trx_id, bool 
   entry = lock_it->second;
   new_lock->sent_point = entry;
   
-
   conflict = false;
   point = entry->head;
   while(point) 
