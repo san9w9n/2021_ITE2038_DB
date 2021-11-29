@@ -23,7 +23,6 @@
 #define WAIT(X, Y) (pthread_cond_wait(&(X), &(Y)))
 #define BROADCAST(X) (pthread_cond_broadcast(&(X)))
 
-
 lock_table_t lock_table;
 trx_table_t trx_table;
 pthread_mutex_t lock_mutex;
