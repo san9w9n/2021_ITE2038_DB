@@ -73,7 +73,6 @@ bool deadlock_detect(int trx_id);
 int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int trx_id);
 int db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, uint16_t* old_val_size, int trx_id);
 void append_lock(entry_t* entry, lock_t* lock, trx_t* trx);
-bool impl_to_expl(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int trx_id, bool lock_mode, lock_t* new_lock);
 bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int trx_id, bool lock_mode);
 
 #endif
