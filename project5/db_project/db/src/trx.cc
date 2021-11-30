@@ -271,7 +271,6 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
   trx_t*        trx;
   page_t*       header;
   page_t*       page;
-  pagenum_t     root_num;
   pagenum_t     page_id;
   int           header_idx;
   int           page_idx;
@@ -286,17 +285,26 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
     return 1;
 
   header = buffer_read_page(table_id, 0, &header_idx, READ);
-  root_num = header->root_num;
-  if(!root_num)
-    return 1;
+  page_id = header->root_num;
+  if(!page_id) return 1;
 
-  page_id = find_leaf(table_id, root_num, key);
   page = buffer_read_page(table_id, page_id, &page_idx, READ);
+
+  while(!page->info.isLeaf) {
+    if(key<page->branch[0].key) page_id = page->leftmost;
+    else {
+      uint32_t i=0;
+      for(i=0; i<page->info.num_keys-1; i++) 
+        if(key<page->branch[i+1].key) break;
+      page_id = page->branch[i].pagenum;
+    }
+    page = buffer_read_page(table_id, page_id, &page_idx, READ);
+  }
+  
   for(key_index=0; key_index<page->info.num_keys; key_index++) {
     if(page->leafbody.slot[key_index].key == key) break;
   }
-  if(key_index == page->info.num_keys)
-    return 1;
+  if(key_index == page->info.num_keys) return 1;
 
   flag = lock_acquire(table_id, page_id, key, key_index, trx_id, SHARED);
   if(flag == DEADLOCK) {
@@ -323,7 +331,6 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
   int                     page_idx;
   int                     key_index;
   int                     flag;
-  pagenum_t               root_num;
   pagenum_t               page_id;
   trx_t*                  trx;
   trx_t*                  impl_trx;
@@ -341,11 +348,22 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
     return 1;
 
   header = buffer_read_page(table_id, 0, &header_idx, READ);
-  root_num = header->root_num;
-  if(!root_num) return 1;
+  page_id = header->root_num;
+  if(!page_id) return 1;
 
-  page_id = find_leaf(table_id, root_num, key);
   page = buffer_read_page(table_id, page_id, &page_idx, READ);
+
+  while(!page->info.isLeaf) {
+    if(key<page->branch[0].key) page_id = page->leftmost;
+    else {
+      uint32_t i=0;
+      for(i=0; i<page->info.num_keys-1; i++) 
+        if(key<page->branch[i+1].key) break;
+      page_id = page->branch[i].pagenum;
+    }
+    page = buffer_read_page(table_id, page_id, &page_idx, READ);
+  }
+
   for(key_index=0; key_index<page->info.num_keys; key_index++) {
     if(page->leafbody.slot[key_index].key == key) break;
   }
@@ -529,7 +547,7 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int t
 
     append_lock(entry, new_lock, trx);
     point = conflict_lock;
-    while(point != new_lock) {
+    do {
       if((point->bitmap & bitmap) && (point->lock_mode == EXCLUSIVE)) {
         trx->wait_trx_id = point->owner_trx_id;
         if(deadlock_detect(trx_id)) {
@@ -542,7 +560,7 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int t
         continue;
       }
       point = point->lock_next;
-    }
+    } while(point != new_lock);
     trx->wait_trx_id = 0;
     UNLOCK(lock_mutex);
     return NORMAL;
@@ -617,7 +635,7 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int t
 
   append_lock(entry, new_lock, trx);
   point = conflict_lock;
-  while(point!=new_lock) {
+  do {
     if((point->bitmap & bitmap) && (point->owner_trx_id != trx_id))
     {
       trx->wait_trx_id = point->owner_trx_id;
@@ -631,7 +649,7 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int t
       continue;
     }
     point = point->lock_next;
-  }
+  } while(point!=new_lock);
   trx->wait_trx_id = 0;
   UNLOCK(lock_mutex);
   return NORMAL;
