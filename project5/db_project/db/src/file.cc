@@ -32,7 +32,7 @@ int64_t file_open_table_file(const char* path) {
     ssize_t check;
     int64_t table_id;
     if(table_nums>=MAX_TABLES || find_duplicate_file(path)) return -1;
-    int fd = open(path, O_RDWR|O_SYNC|O_CREAT, 0777);
+    int fd = open(path, O_RDWR|O_CREAT, 0777);
     if(fd<0) return -1;
 
     if(!table) {
@@ -72,7 +72,7 @@ ssize_t header_page_rdwr(int fd, int write_else_read, page_t* headerPg) {
 
     if(write_else_read) { 
         ret_flag = pwrite(fd, headerPg, PGSIZE, 0);
-        fsync(fd);
+        // fsync(fd);
     } else {
         ret_flag = pread(fd, headerPg, PGSIZE, 0);
     }
@@ -100,7 +100,7 @@ ssize_t free_page_rdwr(int fd, page_t* freePg, pagenum_t pagenum, int write_else
 
     if(write_else_read) { 
         ret_flag = pwrite(fd, freePg, PGSIZE, PGOFFSET(pagenum));
-        fsync(fd);
+        // fsync(fd);
     } else {
         ret_flag = pread(fd, freePg, PGSIZE, PGOFFSET(pagenum));
     }
@@ -162,7 +162,7 @@ void file_write_page(int64_t table_id, pagenum_t pagenum, const page_t* src) {
     int fd;
     fd = table[table_id].fd;
     pwrite(fd, src, PGSIZE, PGOFFSET(pagenum));
-    fsync(fd);
+    // fsync(fd);
 }
 
 void file_close_table_files() {
