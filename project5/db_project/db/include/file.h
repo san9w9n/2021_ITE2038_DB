@@ -1,9 +1,6 @@
 #ifndef __FILE_H__
 #define __FILE_H__
 
-#pragma gcc optimization("O3");
-#pragma gcc optimization("unroll-loops");
-
 #include <stdint.h>
 #include <fcntl.h>
 #include <unistd.h>

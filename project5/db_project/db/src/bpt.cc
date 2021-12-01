@@ -2,9 +2,6 @@
 
 #include "bpt.h"
 
-#pragma gcc optimization("O3");
-#pragma gcc optimization("unroll-loops");
-
 #define INITIAL_FREE 3968
 #define THRESHOLD 2500
 #define MAX_ORDER 249

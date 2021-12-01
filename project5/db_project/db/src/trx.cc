@@ -1,8 +1,5 @@
 #include "trx.h"
 
-#pragma gcc optimization("O3");
-#pragma gcc optimization("unroll-loops");
-
 #define SHARED 0
 #define EXCLUSIVE 1
 
@@ -20,7 +17,7 @@
 #define LOCK(X) (pthread_mutex_lock(&(X)))
 #define UNLOCK(X) (pthread_mutex_unlock(&(X)))
 #define WAIT(X, Y) (pthread_cond_wait(&(X), &(Y)))
-#define BROADCAST(X) (pthread_cond_broadcast(&(X)))
+#define SIGNAL(X) (pthread_cond_signal(&(X)))
 
 lock_table_t lock_table;
 trx_table_t trx_table;
@@ -218,9 +215,8 @@ lock_release(trx_t* trx)
     entry = point->sent_point;
     tmp = point;
     while(tmp) {
-      if(trx_table[tmp->owner_trx_id-1]->wait_trx_id == trx_id) {
-        pthread_cond_signal(&(tmp->cond));
-      }
+      if(trx_table[tmp->owner_trx_id-1]->wait_trx_id == trx_id)
+        SIGNAL(tmp->cond);
       tmp = tmp->lock_next;
     }
 
@@ -229,9 +225,6 @@ lock_release(trx_t* trx)
     if(point->lock_next) point->lock_next->lock_prev = point->lock_prev;
     if(point->lock_prev) point->lock_prev->lock_next = point->lock_next;
     
-    
-
-    // BROADCAST(point->cond);
     if(!entry->head) {
       lock_table.erase({entry->table_id, entry->page_id});
       delete entry;
