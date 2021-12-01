@@ -205,23 +205,33 @@ lock_release(trx_t* trx)
   int                     lock_mode;
   int                     flag;
   int                     leaf_idx;
+  int                     trx_id;
   int                     cnt;
   page_t*                 leaf;
 
   LOCK(lock_mutex);
 
   point = trx->trx_next;
+  trx_id = point->owner_trx_id;
   while(point) 
   {
     entry = point->sent_point;
-    
+    tmp = point;
+    while(tmp) {
+      if(trx_table[tmp->owner_trx_id-1]->wait_trx_id == trx_id) {
+        pthread_cond_signal(&(tmp->cond));
+      }
+      tmp = tmp->lock_next;
+    }
+
     if(entry->head == point) entry->head = point->lock_next;
     if(entry->tail == point) entry->tail = point->lock_prev;
     if(point->lock_next) point->lock_next->lock_prev = point->lock_prev;
     if(point->lock_prev) point->lock_prev->lock_next = point->lock_next;
     
     
-    BROADCAST(point->cond);
+
+    // BROADCAST(point->cond);
     if(!entry->head) {
       lock_table.erase({entry->table_id, entry->page_id});
       delete entry;
@@ -554,7 +564,7 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int t
           UNLOCK(lock_mutex);
           return DEADLOCK;
         }
-        WAIT(point->cond, lock_mutex);
+        WAIT(new_lock->cond, lock_mutex);
         trx->wait_trx_id = 0;
         point = entry->head;
         continue;
@@ -643,7 +653,7 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int t
         UNLOCK(lock_mutex);
         return DEADLOCK;
       }
-      WAIT(point->cond, lock_mutex);
+      WAIT(new_lock->cond, lock_mutex);
       trx->wait_trx_id = 0;
       point = entry->head;
       continue;
