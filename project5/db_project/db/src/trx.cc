@@ -17,7 +17,7 @@
 #define LOCK(X) (pthread_mutex_lock(&(X)))
 #define UNLOCK(X) (pthread_mutex_unlock(&(X)))
 #define WAIT(X, Y) (pthread_cond_wait(&(X), &(Y)))
-#define SIGNAL(X) (pthread_cond_signal(&(X)))
+#define BROADCAST(X) (pthread_cond_broadcast(&(X)))
 
 lock_table_t lock_table;
 trx_table_t trx_table;
@@ -197,7 +197,6 @@ lock_release(trx_t* trx)
   lock_t*                 point;
   lock_t*                 lock;
   lock_t*                 del;
-  lock_t*                 tmp;
   entry_t*                entry;
   int                     lock_mode;
   int                     flag;
@@ -213,18 +212,14 @@ lock_release(trx_t* trx)
   while(point) 
   {
     entry = point->sent_point;
-    tmp = point;
-    while(tmp) {
-      if(trx_table[tmp->owner_trx_id-1]->wait_trx_id == trx_id)
-        SIGNAL(tmp->cond);
-      tmp = tmp->lock_next;
-    }
 
     if(entry->head == point) entry->head = point->lock_next;
     if(entry->tail == point) entry->tail = point->lock_prev;
     if(point->lock_next) point->lock_next->lock_prev = point->lock_prev;
     if(point->lock_prev) point->lock_prev->lock_next = point->lock_next;
     
+    BROADCAST(point->cond);
+
     if(!entry->head) {
       lock_table.erase({entry->table_id, entry->page_id});
       delete entry;
@@ -434,24 +429,25 @@ append_lock(entry_t* entry, lock_t* lock, trx_t* trx)
 bool
 lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int trx_id, bool lock_mode)
 {
-  entry_t*      entry;
-  lock_t*       point;
-  lock_t*       new_lock;
-  lock_t*       comp_Slock;
-  lock_t*       conflict_lock;
-  bool          other_Slock;
-  trx_t*        trx;
-  uint64_t      bitmap;
-  bool          conflict;
-  bool          my_SX;
-  page_t*       page;
-  int           page_idx;
-  int impl_trx_id;
-  trx_t* impl_trx;
-  lock_t* impl_lock;
-  bool my_impl, no_impl;
-  lock_table_t::iterator lock_it;
-
+  lock_table_t::iterator  lock_it;
+  page_t*                 page;
+  entry_t*                entry;
+  lock_t*                 point;
+  lock_t*                 new_lock;
+  lock_t*                 comp_Slock;
+  lock_t*                 conflict_lock;
+  lock_t*                 impl_lock;
+  trx_t*                  trx;
+  trx_t*                  impl_trx;
+  uint64_t                bitmap;
+  int                     page_idx;
+  int                     impl_trx_id;
+  bool                    other_Slock;
+  bool                    conflict;
+  bool                    my_SX;
+  bool                    my_impl;
+  bool                    no_impl;
+  
   LOCK(lock_mutex);
 
   my_impl = no_impl = false;
@@ -557,7 +553,7 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int t
           UNLOCK(lock_mutex);
           return DEADLOCK;
         }
-        WAIT(new_lock->cond, lock_mutex);
+        WAIT(point->cond, lock_mutex);
         trx->wait_trx_id = 0;
         point = entry->head;
         continue;
@@ -646,7 +642,7 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int t
         UNLOCK(lock_mutex);
         return DEADLOCK;
       }
-      WAIT(new_lock->cond, lock_mutex);
+      WAIT(point->cond, lock_mutex);
       trx->wait_trx_id = 0;
       point = entry->head;
       continue;
