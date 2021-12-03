@@ -1,24 +1,5 @@
 #include "trx.h"
 
-#define SHARED 0
-#define EXCLUSIVE 1
-
-#define ACQUIRED 0
-#define WAITING 1
-
-#define NORMAL 0
-#define DEADLOCK 1
-
-#define ACTIVE 0
-#define COMMIT 1
-#define ABORT 2
-
-#define MASK(X) (1UL<<(63-(X)))
-#define LOCK(X) (pthread_mutex_lock(&(X)))
-#define UNLOCK(X) (pthread_mutex_unlock(&(X)))
-#define WAIT(X, Y) (pthread_cond_wait(&(X), &(Y)))
-#define BROADCAST(X) (pthread_cond_broadcast(&(X)))
-
 lock_table_t lock_table;
 trx_table_t trx_table;
 pthread_mutex_t lock_mutex;
