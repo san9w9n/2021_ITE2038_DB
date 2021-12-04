@@ -75,7 +75,7 @@ void make_free_pages(int fd, pagenum_t next, uint64_t lp, page_t* headerPg) {
         freePg->nextfree_num = nextfree+1;
         pwrite(fd, freePg, PGSIZE, PGOFFSET(nextfree));
         cnt++;
-        if(cnt==2560) {
+        if(cnt==1000) {
             fsync(fd);
             cnt = 0;
         }
