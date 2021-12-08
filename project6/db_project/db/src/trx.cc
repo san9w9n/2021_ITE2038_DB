@@ -161,13 +161,15 @@ int trx_abort(int trx_id) {
       if (key < page->branch[0].key)
         page_id = page->leftmost;
       else {
-        uint32_t i = 0;
-        for (i = 0; i < page->info.num_keys - 1; i++)
-          if (key < page->branch[i + 1].key) break;
-        page_id = page->branch[i].pagenum;
+        int k;
+        for (k = 0; k < page->info.num_keys - 1; k++)
+          if (key < page->branch[k + 1].key) break;
+        page_id = page->branch[k].pagenum;
       }
       page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
     }
+    for(i=0; i<page->info.num_keys; i++)
+      if(page->leafbody.slot[i].key == key) break;
 
     new_size = undo->val_size;
     
