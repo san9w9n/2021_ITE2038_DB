@@ -182,8 +182,9 @@ redo(int log_num)
       log_trx = log_trx_table[log->trx_id];
       if(log->type == UPDATED)
         log_trx->update_S.push(log->LSN);
-      else if(log->type == COMPENSATE)
-        log_trx->update_S.pop();
+      else if(log->type == COMPENSATE) {
+        if(!log_trx->update_S.empty()) log_trx->update_S.pop();
+      }
       log_trx->last_LSN = log->LSN;
     }
 
@@ -283,7 +284,7 @@ undo(int log_num)
     last_LSN = prior_trx.last_LSN;
     trx_id = prior_trx.trx_id;
     log_trx = log_trx_table[trx_id];
-    log_trx->update_S.pop();
+    if(!log_trx->update_S.empty()) log_trx->update_S.pop();
 
     pread(logFD, log, LGSIZE, last_LSN);
     pread(logFD, up_log, UPSIZE, last_LSN + LGSIZE);
