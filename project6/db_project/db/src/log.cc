@@ -89,6 +89,10 @@ void
 log_flush()
 {
   LOCK(log_mutex);
+  if(!buff_tail) {
+    UNLOCK(log_mutex);
+    return;  
+  }
   pwrite(logFD, log_buffer, buff_tail, non_flushed_LSN);
   header_log->flushed_LSN = non_flushed_LSN + buff_tail;
   pwrite(logFD, header_log, LGHDSIZE, 0);
@@ -342,17 +346,17 @@ init_log(int flag, int log_num, char* log_path, char* logmsg_path)
 
   log_mutex = PTHREAD_MUTEX_INITIALIZER;
   if ((logFD = open(log_path, O_RDWR | O_CREAT, 0777)) <= 0) return 1;
-  if (!(logmsg_file = fopen(logmsg_path, "w"))) return 1;
+  if (!(logmsg_file = fopen(logmsg_path, "w+"))) return 1;
 
   header_log = new header_log_t();
   first = pread(logFD, header_log, LGHDSIZE, 0);
   buff_tail = 0;
-  if(!first) {
+  if(first <= 0) {
     header_log->last_trx_id = 0;
     header_log->flushed_LSN = LGHDSIZE;
     non_flushed_LSN = LGHDSIZE;
   } else {
-    non_flushed_LSN = header_log->flushed_LSN;
+    if(!(non_flushed_LSN = header_log->flushed_LSN)) non_flushed_LSN = LGHDSIZE;
     analysis();
     if(flag == RECOVERY) {
       redo(NO_CRASH);

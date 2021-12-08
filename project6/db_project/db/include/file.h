@@ -14,7 +14,7 @@
 #include <vector>
 #include "pthread.h"
 
-#define MAX_TABLES 20
+#define MAX_TABLES 50
 #define PGSIZE 4096
 typedef uint64_t pagenum_t;
 

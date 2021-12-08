@@ -28,6 +28,7 @@ int64_t file_open_table_file(const char* path) {
   if (fd < 0) return -1;
 
   table[table_id] = fd;
+  table_nums++;
   
   page_t* headerPg = (page_t*)malloc(sizeof(page_t));
   check = pread(fd, headerPg, PGSIZE, 0);
@@ -133,7 +134,7 @@ void file_write_page(int64_t table_id, pagenum_t pagenum, const page_t* src) {
 }
 
 void file_close_table_files() {
-  for (int i = 0; i < table_nums; i++) { 
+  for (int i = 0; i < MAX_TABLES; i++) { 
     close(table[i]);
     table[i] = 0;
   }

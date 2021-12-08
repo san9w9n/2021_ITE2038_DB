@@ -14,7 +14,7 @@
 #define ROLLBACK (3)
 #define COMPENSATE (4)
 #define LOGBUFFSIZE (4096UL)
-#define LOGTHRESHOLD (LOGBUFFSIZE - 1000)
+#define LOGTHRESHOLD (LOGBUFFSIZE - 500)
 #define LGHDSIZE (16)
 #define LGSIZE   (28)
 #define UPSIZE   (20)

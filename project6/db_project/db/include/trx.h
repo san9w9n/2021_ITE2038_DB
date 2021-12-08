@@ -61,7 +61,6 @@ typedef std::pair<int64_t, int64_t> log_key_t;
 typedef std::stack<undo_t*> undo_table_t;
 
 typedef struct trx_t {
-  int trx_id;
   undo_table_t undo_table;
   lock_t* trx_next;
   int wait_trx_id;

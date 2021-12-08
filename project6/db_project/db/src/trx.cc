@@ -60,7 +60,7 @@ int trx_begin(void) {
   trx->trx_next = nullptr;
   trx->wait_trx_id = 0;
   trx_table.push_back(trx);
-  trx->trx_id = trx_id = trx_table.size() + last_trx_id;
+  trx_id = trx_table.size() + last_trx_id;
   trx->state = ACTIVE;
   log = make_log(LGSIZE, 0, trx_id, BEGIN);
   trx->last_LSN = log->LSN;
@@ -369,8 +369,6 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
         my_impl = true;
       else if ((impl_trx_id-last_trx_id-1 < 0) || (trx_table[impl_trx_id-last_trx_id-1]->state != ACTIVE))
         no_impl = true;
-      else if (trx_table[impl_trx_id-last_trx_id-1]->trx_id <= last_trx_id) 
-        no_impl = true;
       UNLOCK(trx_mutex);
 
       if (my_impl) {
@@ -459,8 +457,6 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
     if (impl_trx_id == trx_id)
       my_impl = true;
     else if ((impl_trx_id-last_trx_id-1 < 0) || (trx_table[impl_trx_id-last_trx_id-1]->state != ACTIVE))
-      no_impl = true;
-    else if (trx_table[impl_trx_id-last_trx_id-1]->trx_id <= last_trx_id) 
       no_impl = true;
     UNLOCK(trx_mutex);
 
