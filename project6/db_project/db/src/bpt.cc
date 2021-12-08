@@ -64,7 +64,6 @@ int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t* val_size,
 
   if (!isValid(table_id)) return 1;
   if (!(trx = give_trx(trx_id))) return 1;
-
   header = buffer_read_page(table_id, 0, &header_idx, READ);
   page_id = header->root_num;
   if (!page_id) return 1;
@@ -126,8 +125,12 @@ int db_update(int64_t table_id, int64_t key, char* values,
   char* old_value;
   trx_table_t::iterator it;
 
-  if (!isValid(table_id)) return 1;
-  if (!(trx = give_trx(trx_id))) return 1;
+  if (!isValid(table_id)) {
+    return 1;
+  }
+  if (!(trx = give_trx(trx_id))) {
+    return 1;
+  }
 
   header = buffer_read_page(table_id, 0, &header_idx, READ);
   page_id = header->root_num;
@@ -165,14 +168,14 @@ int db_update(int64_t table_id, int64_t key, char* values,
   old_value = new char[size + 1];
 
   log = make_log(LGSIZE + UPSIZE + 2*new_val_size, trx->last_LSN, trx_id, UPDATED);
-  up_log = make_up_log(table_id, page_id, offset + 128, new_val_size);
+  up_log = make_up_log(table_id, page_id, page->leafbody.slot[key_index].offset, new_val_size);
   trx->last_LSN = log->LSN;
-  old_img = new char[size + 1];
+  old_img = new char[new_val_size + 1];
   new_img = new char[new_val_size + 1];
-  for(int k=0; k<size; k++) 
+  for(int k=0; k<new_val_size; k++) {
     old_img[k] = page->leafbody.value[k+offset];
-  for(int k=0; k<new_val_size; k++)
     new_img[k] = values[k];
+  }
   push_log_buf(log, up_log, old_img, new_img, 0);
 
   page->LSN = log->LSN;

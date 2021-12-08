@@ -52,15 +52,16 @@ int trx_begin(void) {
   int trx_id;
 
   LOCK(trx_mutex);
-  if(!last_trx_id) 
+  if(!last_trx_id) {
     last_trx_id = give_last_trx_id();
+  }
   trx = new trx_t;
   
   trx->trx_next = nullptr;
   trx->wait_trx_id = 0;
   trx_table.push_back(trx);
   trx->trx_id = trx_id = trx_table.size() + last_trx_id;
-
+  trx->state = ACTIVE;
   log = make_log(LGSIZE, 0, trx_id, BEGIN);
   trx->last_LSN = log->LSN;
   push_log_buf(log, nullptr, nullptr, nullptr, 0);
@@ -105,7 +106,6 @@ int trx_commit(int trx_id) {
     delete[] undo->old_value;
     delete undo;
   }
-
   lock_release(trx);
 
   log = make_log(LGSIZE, trx->last_LSN, trx_id, COMMITED);
@@ -170,21 +170,21 @@ int trx_abort(int trx_id) {
     }
 
     new_size = undo->val_size;
-    old_size = page->leafbody.slot[i].size;
-    page->leafbody.slot[i].size = new_size;
+    
     offset = page->leafbody.slot[i].offset - 128;
     log = make_log(LGSIZE + UPSIZE + 2*new_size, trx->last_LSN, trx_id, UPDATED);
-    up_log = make_up_log(table_id, page_id, offset + 128, new_size);
+    up_log = make_up_log(table_id, page_id, page->leafbody.slot[i].offset, new_size);
     trx->last_LSN = log->LSN;
-    old_img = new char[old_size+1];
+    old_img = new char[new_size+1];
     new_img = new char[new_size+1];
-    for(int k=0; k<new_size; k++) 
+    for(int k=0; k<new_size; k++) {
       new_img[k] = undo->old_value[k];
-    for(int k=0; k<old_size; k++) 
       old_img[k] = page->leafbody.value[k+offset];
+    }
 
     push_log_buf(log, up_log, old_img, new_img, 0);
 
+    page->leafbody.slot[i].size = new_size;
     page->LSN = log->LSN;
     for (int k = offset; k < offset + new_size; k++)
       page->leafbody.value[k] = undo->old_value[k - offset];
