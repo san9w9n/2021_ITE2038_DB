@@ -4,7 +4,6 @@
 
 // API
 int64_t open_table(char *pathname);
-int init_db(int num_buf, int flag, int log_num, char* log_path, char* logmsg_path);
 int shutdown_db();
 int db_insert(int64_t table_id, int64_t key, char * value, uint16_t val_size);
 int db_delete(int64_t table_id, int64_t key);

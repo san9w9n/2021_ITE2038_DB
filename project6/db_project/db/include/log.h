@@ -4,73 +4,73 @@
 #include "file.h"
 #include "buffer.h"
 
-#define RECOVERY (0)
-#define REDO_CRASH (1)
-#define UNDO_CRASH (2)
-#define NO_CRASH (-1)
-#define BEGIN (0)
-#define UPDATED (1)
-#define COMMITED (2)
-#define ROLLBACK (3)
-#define COMPENSATE (4)
-#define LOGBUFFSIZE (4096UL)
-#define LOGTHRESHOLD (LOGBUFFSIZE - 500)
-#define LGHDSIZE (16)
-#define LGSIZE   (28)
-#define UPSIZE   (20)
+#define RECOVERY 0
+#define REDO_CRASH 1
+#define UNDO_CRASH 2
+
+#define BEGIN 0
+#define UPDATE 1
+#define COMMIT 2
+#define ROLLBACK 3
+#define COMPENSATE 4
+#define LOGBUFFSIZE 4096
+#define LOGTHRESHOLD 3600
+
+#define HEADERLOG 12
+#define MAINLOG 28
+#define UPDATELOG 20
 
 #define LOCK(X) (pthread_mutex_lock(&(X)))
 #define UNLOCK(X) (pthread_mutex_unlock(&(X)))
 
-typedef struct header_log_t {
-  uint64_t flushed_LSN;
-  int last_trx_id;
+typedef uint64_t LSN_t;
+
+typedef struct __attribute__((__packed__)) header_log_t {
+	LSN_t flushed_LSN;
+	int last_trx_id;
 } header_log_t;
 
-typedef struct __attribute__((__packed__)) log_t {
-  int log_size;
-  uint64_t LSN;
-  uint64_t prev_LSN;
-  int trx_id;
-  int type;
-} log_t;
+typedef struct __attribute__((__packed__)) main_log_t {
+	int log_size;
+	LSN_t LSN;
+	LSN_t prev_LSN;
+	int trx_id;
+	int type;
+} main_log_t;
 
 typedef struct __attribute__((__packed__)) update_log_t {
-  int64_t table_id;
-  pagenum_t page_id;
-  uint16_t offset;
-  uint16_t valsize;
+	int64_t table_id;
+	pagenum_t page_id;
+	uint16_t offset;
+	uint16_t valsize;
 } update_log_t;
 
-typedef struct log_trx_t {
-  int trx_id;
-  uint64_t last_LSN;
-	std::stack<uint64_t> update_S;
-} log_trx_t;
+typedef struct active_trx_t {
+	LSN_t begin_LSN;
+	LSN_t last_LSN;
+	std::stack<LSN_t> update_LSN_stack;
+} active_trx;
+typedef std::unordered_map<int, active_trx*> activetrans_t;
 
-typedef struct priority_trx_t {
-  int trx_id;
-  uint64_t last_LSN;
-} priority_trx_t;
 
-struct compare {
-  bool operator()(const priority_trx_t& trx1, const priority_trx_t& trx2) {
-    return trx1.last_LSN < trx2.last_LSN;
-  }
-};
+typedef std::priority_queue<LSN_t> priority_table_t;
 
-typedef std::unordered_map<int, log_trx_t*> log_trx_table_t;
-typedef std::priority_queue<priority_trx_t, std::vector<priority_trx_t>, compare> priority_table_t;
 
-log_t* make_log(int log_size, uint64_t prev_LSN, int trx_id, int type);
-update_log_t* make_up_log(int64_t table_id, pagenum_t page_id, uint16_t offset, uint16_t valsize);
-void push_log_buf(log_t* log, update_log_t* up_log, char* old_img, char* new_img, uint64_t next_undo_LSN);
-void log_flush();
+void make_active_trx(int trx_id, LSN_t first_LSN);
+void erase_active_trx(int trx_id);
+void file_read_mainlog(main_log_t* main_log, LSN_t LSN);
+void push_log_to_buffer(main_log_t* main_log, update_log_t* update_log, char* old_img, char* new_img, LSN_t next_undo_LSN);
+main_log_t* make_main_log(int trx_id, int type, int log_size, LSN_t prev_LSN);
+update_log_t* make_update_log(int64_t table_id, pagenum_t page_id, uint16_t valsize, uint16_t offset);
 void analysis();
-void redo(int log_num);
-int give_last_trx_id();
-void undo(int log_num);
+int last_trx_id();
 int init_log(int flag, int log_num, char* log_path, char* logmsg_path);
+void log_flush();
+void push_update_stack(int trx_id, LSN_t LSN);
+void pop_update_stack(int trx_id);
 int shutdown_log();
+LSN_t top_update_stack(int trx_id);
+void redo(int log_num);
+void undo(int log_num);
 
 #endif
