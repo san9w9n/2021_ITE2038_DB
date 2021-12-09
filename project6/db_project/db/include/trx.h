@@ -73,6 +73,6 @@ int trx_abort(int trx_id);
 int lock_release(trx_t* trx);
 bool deadlock_detect(int trx_id);
 void append_lock(entry_t* entry, lock_t* lock, trx_t* trx);
-bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int trx_id, bool lock_mode);
+bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int trx_id, bool lock_mode, page_t* page, int page_idx);
 
 #endif

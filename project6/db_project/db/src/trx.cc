@@ -329,11 +329,10 @@ append_lock(entry_t* entry, lock_t* lock, trx_t* trx)
 }
 
 
-bool
-lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int trx_id, bool lock_mode)
+bool 
+lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int trx_id, bool lock_mode, page_t* page, int page_idx)
 {
   lock_table_t::iterator  lock_it;
-  page_t*                 page;
   entry_t*                entry;
   lock_t*                 point;
   lock_t*                 new_lock;
@@ -343,7 +342,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int t
   trx_t*                  trx;
   trx_t*                  impl_trx;
   uint64_t                bitmap;
-  int                     page_idx;
   int                     impl_trx_id;
   bool                    other_Slock;
   bool                    conflict;
@@ -500,7 +498,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int t
       return NORMAL;
     }
 
-    page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
     impl_trx_id = page->leafbody.slot[kindex].trx_id;
 
     LOCK(trx_mutex);
@@ -511,7 +508,6 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int t
     UNLOCK(trx_mutex);
 
     if(my_impl) {
-      buffer_write_page(table_id, page_id, page_idx, 0);
       delete new_lock;
       trx->wait_trx_id = 0;
       UNLOCK(lock_mutex);
@@ -519,13 +515,11 @@ lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int t
     }
     if(no_impl) {
       page->leafbody.slot[kindex].trx_id = trx_id;
-      buffer_write_page(table_id, page_id, page_idx, 1);
       trx->wait_trx_id = 0;
       append_lock(entry, new_lock, trx);
       UNLOCK(lock_mutex);
       return NORMAL;
     }
-    buffer_write_page(table_id, page_id, page_idx, 0);
 
     impl_lock = give_lock(key, bitmap, impl_trx_id, EXCLUSIVE);
     impl_trx = trx_table[impl_trx_id];

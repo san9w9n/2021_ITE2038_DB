@@ -89,7 +89,7 @@ db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t *val_size, int tr
   }
   if(key_index == page->info.num_keys) return 1;
 
-  flag = lock_acquire(table_id, page_id, key, key_index, trx_id, SHARED);
+  flag = lock_acquire(table_id, page_id, key, key_index, trx_id, SHARED, 0, 0);
   if(flag == DEADLOCK) {
     trx_abort(trx_id);
     return 1;
@@ -156,8 +156,9 @@ db_update(int64_t table_id, int64_t key, char* values, uint16_t new_val_size, ui
   if(key_index == page->info.num_keys) return 1;
   
 
-  flag = lock_acquire(table_id, page_id, key, key_index, trx_id, EXCLUSIVE);
+  flag = lock_acquire(table_id, page_id, key, key_index, trx_id, EXCLUSIVE, page, page_idx);
   if(flag == DEADLOCK) {
+		buffer_write_page(table_id, page_id, page_idx, 0);
     trx_abort(trx_id);
     return 1;
   }
