@@ -2,6 +2,7 @@
 #define __BUFFER_H__
 
 #include "log.h"
+#include "file.h"
 
 #define READ 0
 #define WRITE 1
@@ -9,23 +10,23 @@
 #define UNLOCKED 1
 
 typedef struct frame_t {
-    page_t* page;
-    int64_t table_id;
-    pagenum_t page_num;
-    pthread_mutex_t page_mutex;
-    int nextLRU;
-    int prevLRU;
-    int8_t is_dirty;
-    int8_t is_buf;
-    bool state;
+  page_t* page;
+  int64_t table_id;
+  pagenum_t page_num;
+  pthread_mutex_t page_mutex;
+  int nextLRU;
+  int prevLRU;
+  int8_t is_dirty;
+  int8_t is_buf;
+  bool state;
 } frame_t;
 
 typedef struct buffer_pool_t {
-    frame_t* frames;
-    int num_frames;
-    int num_bufs;
-    int firstLRU;
-    int lastLRU;
+  frame_t* frames;
+  int num_frames;
+  int num_bufs;
+  int firstLRU;
+  int lastLRU;
 } buffer_pool_t;
 
 int buf_hashFunction(int64_t table_id, pagenum_t pagenum);
@@ -37,7 +38,7 @@ void delete_LRU(int idx);
 void delete_append_LRU(int idx);
 int give_idx();
 int init_buffer(int num_buf);
-int64_t file_open_via_buffer(char *pathname);
+int64_t file_open_via_buffer(char* pathname);
 pagenum_t buffer_alloc_page(int64_t table_id);
 void buffer_free_page(int64_t table_id, pagenum_t pagenum, int32_t idx);
 page_t* buffer_read_page(int64_t table_id, pagenum_t pagenum, int* idx, bool mode);

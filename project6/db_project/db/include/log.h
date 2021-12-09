@@ -26,42 +26,42 @@
 typedef uint64_t LSN_t;
 
 typedef struct __attribute__((__packed__)) header_log_t {
-	LSN_t flushed_LSN;
-	int last_trx_id;
+  LSN_t flushed_LSN;
+  int last_trx_id;
 } header_log_t;
 
 typedef struct __attribute__((__packed__)) main_log_t {
-	int log_size;
-	LSN_t LSN;
-	LSN_t prev_LSN;
-	int trx_id;
-	int type;
+  int log_size;
+  LSN_t LSN;
+  LSN_t prev_LSN;
+  int trx_id;
+  int type;
 } main_log_t;
 
 typedef struct __attribute__((__packed__)) update_log_t {
-	int64_t table_id;
-	pagenum_t page_id;
-	uint16_t offset;
-	uint16_t valsize;
+  int64_t table_id;
+  pagenum_t page_id;
+  uint16_t offset;
+  uint16_t valsize;
 } update_log_t;
 
 typedef struct active_trx_t {
-	LSN_t begin_LSN;
-	LSN_t last_LSN;
-	std::stack<LSN_t> update_LSN_stack;
+  LSN_t begin_LSN;
+  LSN_t last_LSN;
+  std::stack<LSN_t> update_LSN_stack;
 } active_trx;
 typedef std::unordered_map<int, active_trx*> activetrans_t;
 
-
 typedef std::priority_queue<LSN_t> priority_table_t;
-
 
 void make_active_trx(int trx_id, LSN_t first_LSN);
 void erase_active_trx(int trx_id);
 void file_read_mainlog(main_log_t* main_log, LSN_t LSN);
-void push_log_to_buffer(main_log_t* main_log, update_log_t* update_log, char* old_img, char* new_img, LSN_t next_undo_LSN);
+void push_log_to_buffer(main_log_t* main_log, update_log_t* update_log,
+                        char* old_img, char* new_img, LSN_t next_undo_LSN);
 main_log_t* make_main_log(int trx_id, int type, int log_size, LSN_t prev_LSN);
-update_log_t* make_update_log(int64_t table_id, pagenum_t page_id, uint16_t valsize, uint16_t offset);
+update_log_t* make_update_log(int64_t table_id, pagenum_t page_id,
+                              uint16_t valsize, uint16_t offset);
 void analysis();
 int last_trx_id();
 int init_log(int flag, int log_num, char* log_path, char* logmsg_path);
