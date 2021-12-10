@@ -158,6 +158,7 @@ int trx_abort(int trx_id) {
     page_id = undo->page_id;
     key = undo->key;
     
+    // printf("%d 가 %lu 잡아.\n", trx_id, page_id);
     page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
     for(i=0; i<page->info.num_keys; i++)
       if(page->leafbody.slot[i].key == key) break;
@@ -184,6 +185,7 @@ int trx_abort(int trx_id) {
     for (int k = offset, l = 0; k < offset + size; l++, k++)
       page->leafbody.value[k] = undo->old_value[l];
     buffer_write_page(table_id, page_id, page_idx, 1);
+    // printf("%d 가 %lu 놔줬어.\n", trx_id, page_id);
 
     delete[] undo->old_value;
     delete undo;
@@ -284,7 +286,7 @@ void append_lock(entry_t* entry, lock_t* lock, trx_t* trx) {
   trx->trx_next = lock;
 }
 
-bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
+int lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
                   int trx_id, bool lock_mode, page_t* page, int page_idx) {
   lock_table_t::iterator lock_it;
   entry_t* entry;
@@ -331,7 +333,7 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
           delete new_lock;
           trx->wait_trx_id = 0;
           UNLOCK(lock_mutex);
-          return NORMAL;
+          return page_idx;
         }
         if (point->lock_mode == EXCLUSIVE) {
           conflict = true;
@@ -352,12 +354,12 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
           trx->wait_trx_id = 0;
           comp_Slock->bitmap |= bitmap;
           UNLOCK(lock_mutex);
-          return NORMAL;
+          return page_idx;
         }
         trx->wait_trx_id = 0;
         append_lock(entry, new_lock, trx);
         UNLOCK(lock_mutex);
-        return NORMAL;
+        return page_idx;
       }
 
       impl_trx_id = page->leafbody.slot[kindex].trx_id;
@@ -373,7 +375,7 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
         delete new_lock;
         trx->wait_trx_id = 0;
         UNLOCK(lock_mutex);
-        return NORMAL;
+        return page_idx;
       }
       if (no_impl) {
         if (comp_Slock) {
@@ -381,12 +383,12 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
           trx->wait_trx_id = 0;
           comp_Slock->bitmap |= bitmap;
           UNLOCK(lock_mutex);
-          return NORMAL;
+          return page_idx;
         }
         trx->wait_trx_id = 0;
         append_lock(entry, new_lock, trx);
         UNLOCK(lock_mutex);
-        return NORMAL;
+        return page_idx;
       }
 
       impl_lock = give_lock(key, bitmap, impl_trx_id, EXCLUSIVE);
@@ -402,11 +404,17 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
     do {
       if ((point->bitmap & bitmap) && (point->lock_mode == EXCLUSIVE)) {
         trx->wait_trx_id = point->owner_trx_id;
-        if (deadlock_detect(trx_id)) {
+        if (deadlock_detect(trx_id)) { 
+          buffer_write_page(table_id, page_id, page_idx, 0);
+          // printf("%d 가 %lu 놔줬어.\n", trx_id, page_id);
           UNLOCK(lock_mutex);
-          return DEADLOCK;
+          return DEAD_LOCK;
         }
+        buffer_write_page(table_id, page_id, page_idx, 0);
+        // printf("%d 가 %lu 놔줬어.\n", trx_id, page_id);
         WAIT(point->cond, lock_mutex);
+        // printf("%d 가 %lu 잡아.\n", trx_id, page_id);
+        buffer_read_page(table_id, page_id, &page_idx, WRITE);
         trx->wait_trx_id = 0;
         point = entry->head;
         continue;
@@ -415,7 +423,7 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
     } while (point != new_lock);
     trx->wait_trx_id = 0;
     UNLOCK(lock_mutex);
-    return NORMAL;
+    return page_idx;
   }
 
   // lock_mode == X mode
@@ -428,7 +436,7 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
           delete new_lock;
           trx->wait_trx_id = 0;
           UNLOCK(lock_mutex);
-          return NORMAL;
+          return page_idx;
         } else
           my_SX = true;
       } else {
@@ -445,7 +453,7 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
       append_lock(entry, new_lock, trx);
       trx->wait_trx_id = 0;
       UNLOCK(lock_mutex);
-      return NORMAL;
+      return page_idx;
     }
 
     impl_trx_id = page->leafbody.slot[kindex].trx_id;
@@ -461,14 +469,14 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
       delete new_lock;
       trx->wait_trx_id = 0;
       UNLOCK(lock_mutex);
-      return NORMAL;
+      return page_idx;
     }
     if (no_impl) {
       page->leafbody.slot[kindex].trx_id = trx_id;
       trx->wait_trx_id = 0;
       append_lock(entry, new_lock, trx);
       UNLOCK(lock_mutex);
-      return NORMAL;
+      return page_idx;
     }
 
     impl_lock = give_lock(key, bitmap, impl_trx_id, EXCLUSIVE);
@@ -484,11 +492,18 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
   do {
     if ((point->bitmap & bitmap) && (point->owner_trx_id != trx_id)) {
       trx->wait_trx_id = point->owner_trx_id;
+      
       if (deadlock_detect(trx_id)) {
+        buffer_write_page(table_id, page_id, page_idx, 0);
+        // printf("%d 가 %lu 놔줬어.\n", trx_id, page_id);
         UNLOCK(lock_mutex);
-        return DEADLOCK;
+        return DEAD_LOCK;
       }
+      buffer_write_page(table_id, page_id, page_idx, 0);
+      // printf("%d 가 %lu 놔줬어.\n", trx_id, page_id);
       WAIT(point->cond, lock_mutex);
+      // printf("%d 가 %lu 잡아.\n", trx_id, page_id);
+      page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
       trx->wait_trx_id = 0;
       point = entry->head;
       continue;
@@ -497,5 +512,5 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
   } while (point != new_lock);
   trx->wait_trx_id = 0;
   UNLOCK(lock_mutex);
-  return NORMAL;
+  return page_idx;
 }

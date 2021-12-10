@@ -6,8 +6,7 @@
 #define SHARED 0
 #define EXCLUSIVE 1
 
-#define NORMAL 0
-#define DEADLOCK 1
+#define DEAD_LOCK -1
 
 #define MASK(X) (1UL << (63 - (X)))
 #define WAIT(X, Y) (pthread_cond_wait(&(X), &(Y)))
@@ -73,6 +72,6 @@ int trx_abort(int trx_id);
 int lock_release(trx_t* trx);
 bool deadlock_detect(int trx_id);
 void append_lock(entry_t* entry, lock_t* lock, trx_t* trx);
-bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int trx_id, bool lock_mode, page_t* page, int page_idx);
+int lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex, int trx_id, bool lock_mode, page_t* page, int page_idx);
 
 #endif

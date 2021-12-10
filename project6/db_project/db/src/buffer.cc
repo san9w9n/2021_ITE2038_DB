@@ -289,12 +289,10 @@ page_t* buffer_read_page(int64_t table_id, pagenum_t pagenum, int* idx,
     }
     return ret;
   }
-
   if (num_frames < num_bufs)
     hit = find_empty_frame(table_id, pagenum);
   else
     hit = give_idx();
-
   frames[hit].state = LOCKED;
   LOCK(frames[hit].page_mutex);
   UNLOCK(buf_mutex);

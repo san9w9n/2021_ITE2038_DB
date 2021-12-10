@@ -63,12 +63,15 @@ int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t* val_size,
 
   header = buffer_read_page(table_id, 0, &header_idx, READ);
   page_id = header->root_num;
-  if (!page_id) return 1;
+  if (!page_id) {
+    return 1;
+  }
 
-  LOCK(index_mutex);
+  // printf("%d 가 %lu 잡아.\n", trx_id, page_id);
   page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
   while (!page->info.isLeaf) {
     buffer_write_page(table_id, page_id, page_idx, 0);
+    // printf("%d 가 %lu 놔줬어.\n", trx_id, page_id);
     if (key < page->branch[0].key)
       page_id = page->leftmost;
     else {
@@ -77,21 +80,21 @@ int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t* val_size,
         if (key < page->branch[i + 1].key) break;
       page_id = page->branch[i].pagenum;
     }
+    // printf("%d 가 %lu 잡아.\n", trx_id, page_id);
     page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
   }
-  UNLOCK(index_mutex);
   
   for (key_index = 0; key_index < page->info.num_keys; key_index++) {
     if (page->leafbody.slot[key_index].key == key) break;
   }
   if (key_index == page->info.num_keys) {
     buffer_write_page(table_id, page_id, page_idx, 0);
+    // printf("%d 가 %lu 놔줬어.\n", trx_id, page_id);
     return 1;
   }
 
-  flag = lock_acquire(table_id, page_id, key, key_index, trx_id, SHARED, page, page_idx);
-  if (flag == DEADLOCK) {
-    buffer_write_page(table_id, page_id, page_idx, 0);
+  page_idx = lock_acquire(table_id, page_id, key, key_index, trx_id, SHARED, page, page_idx);
+  if (page_idx == DEAD_LOCK) {
     trx_abort(trx_id);
     return 1;
   }
@@ -103,6 +106,7 @@ int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t* val_size,
   *val_size = size;
 
   buffer_write_page(table_id, page_id, page_idx, 0);
+  // printf("%d 가 %lu 놔줬어.\n", trx_id, page_id);
 
   return 0;
 }
@@ -114,7 +118,6 @@ int db_update(int64_t table_id, int64_t key, char* values,
   int header_idx;
   int page_idx;
   int key_index;
-  int flag;
   pagenum_t page_id;
   trx_t* trx;
   trx_t* impl_trx;
@@ -133,12 +136,14 @@ int db_update(int64_t table_id, int64_t key, char* values,
 
   header = buffer_read_page(table_id, 0, &header_idx, READ);
   page_id = header->root_num;
-  if (!page_id) return 1;
-
-  LOCK(index_mutex);
+  if (!page_id) {
+    return 1;
+  }
+  // printf("%d 가 %lu 잡아.\n", trx_id, page_id);
   page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
   while (!page->info.isLeaf) {
 		buffer_write_page(table_id, page_id, page_idx, 0);
+    // printf("%d 가 %lu 놔줬어.\n", trx_id, page_id);
     if (key < page->branch[0].key)
       page_id = page->leftmost;
     else {
@@ -147,21 +152,21 @@ int db_update(int64_t table_id, int64_t key, char* values,
         if (key < page->branch[i + 1].key) break;
       page_id = page->branch[i].pagenum;
     }
+    // printf("%d 가 %lu 잡아.\n", trx_id, page_id);
     page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
   }
-  UNLOCK(index_mutex);
 
   for (key_index = 0; key_index < page->info.num_keys; key_index++) {
     if (page->leafbody.slot[key_index].key == key) break;
   }
   if (key_index == page->info.num_keys) {
     buffer_write_page(table_id, page_id, page_idx, 0);
+    // printf("%d 가 %lu 놔줬어.\n", trx_id, page_id);
     return 1;
   }
 
-  flag = lock_acquire(table_id, page_id, key, key_index, trx_id, EXCLUSIVE, page, page_idx);
-  if (flag == DEADLOCK) {
-    buffer_write_page(table_id, page_id, page_idx, 0);
+  page_idx = lock_acquire(table_id, page_id, key, key_index, trx_id, EXCLUSIVE, page, page_idx);
+  if (page_idx == DEAD_LOCK) {
     trx_abort(trx_id);
     return 1;
   }
@@ -175,14 +180,13 @@ int db_update(int64_t table_id, int64_t key, char* values,
 
   main_log = make_main_log(trx_id, UPDATE, MAINLOG + UPDATELOG + 2 * new_val_size, trx->last_LSN);
   update_log_t = make_update_log(table_id, page_id, new_val_size, offset + 128);
-  page->LSN = main_log->LSN;
+  trx->last_LSN = page->LSN = main_log->LSN;
   old_img = new char[new_val_size + 2]();
   new_img = new char[new_val_size + 2]();
   for (int i = 0; i < new_val_size; i++) {
     old_img[i] = page->leafbody.value[i + offset];
     new_img[i] = values[i];
   }
-  trx->last_LSN = main_log->LSN;
   push_update_stack(trx_id, main_log->LSN);
   push_log_to_buffer(main_log, update_log_t, old_img, new_img, 0);
 
@@ -199,6 +203,7 @@ int db_update(int64_t table_id, int64_t key, char* values,
   for (int k = 0; k < size; k++) undo->old_value[k] = old_value[k];
   trx->undo_stack.push(undo);
   buffer_write_page(table_id, page_id, page_idx, 1);
+  // printf("%d 가 %lu 놔줬어.\n", trx_id, page_id);
 
   delete[] old_value;
 
