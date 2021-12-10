@@ -159,7 +159,7 @@ int trx_abort(int trx_id) {
     key = undo->key;
     
     page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
-    for(int i=0; i<page->info.num_keys; i++)
+    for(i=0; i<page->info.num_keys; i++)
       if(page->leafbody.slot[i].key == key) break;
     size = undo->val_size;
     offset = page->leafbody.slot[i].offset - 128;

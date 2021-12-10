@@ -190,7 +190,6 @@ int db_update(int64_t table_id, int64_t key, char* values,
     page->leafbody.value[i] = values[j];
   page->leafbody.slot[key_index].size = new_val_size;
 
-  trx = give_trx(trx_id);
   undo = new undo_t;
   undo->old_value = new char[size + 1];
   undo->table_id = table_id;
