@@ -155,40 +155,19 @@ int trx_abort(int trx_id) {
     trx->undo_stack.pop();
 
     table_id = undo->table_id;
+    page_id = undo->page_id;
     key = undo->key;
-
-    header = buffer_read_page(table_id, 0, &header_idx, READ);
-    page_id = header->root_num;
+    
     page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
-    while (!page->info.isLeaf) {
-      buffer_write_page(table_id, page_id, page_idx, 0);
-      if (key < page->branch[0].key)
-        page_id = page->leftmost;
-      else {
-        int k;
-        for (k = 0; k < page->info.num_keys - 1; k++)
-          if (key < page->branch[k + 1].key) break;
-        page_id = page->branch[k].pagenum;
-      }
-      page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
-    }
-    for (i = 0; i < page->info.num_keys; i++)
-      if (page->leafbody.slot[i].key == key) break;
-    if (i == page->info.num_keys) {
-      buffer_write_page(table_id, page_id, page_idx, 0);
-      delete[] undo->old_value;
-      delete undo;
-      continue;
-    }
-
+    for(int i=0; i<page->info.num_keys; i++)
+      if(page->leafbody.slot[i].key == key) break;
     size = undo->val_size;
     offset = page->leafbody.slot[i].offset - 128;
 
     pop_update_stack(trx_id);
     next_undo_LSN = top_update_stack(trx_id);
 
-    main_log = make_main_log(trx_id, COMPENSATE,
-                             MAINLOG + UPDATELOG + 2 * size + 8, trx->last_LSN);
+    main_log = make_main_log(trx_id, COMPENSATE, MAINLOG + UPDATELOG + 2 * size + 8, trx->last_LSN);
     update_log = make_update_log(table_id, page_id, size, offset + 128);
     page->LSN = main_log->LSN;
     old_img = new char[size + 2];
@@ -325,7 +304,6 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
   bool no_impl;
 
   LOCK(lock_mutex);
-
   my_impl = no_impl = false;
   conflict_lock = nullptr;
   conflict = false;
@@ -343,6 +321,7 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
   new_lock->sent_point = entry;
 
   if (lock_mode == SHARED) {
+    int tmp_idx;
     comp_Slock = nullptr;
     other_Slock = false;
     point = entry->head;
@@ -381,7 +360,6 @@ bool lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
         return NORMAL;
       }
 
-      page = buffer_read_page(table_id, page_id, &page_idx, READ);
       impl_trx_id = page->leafbody.slot[kindex].trx_id;
 
       LOCK(trx_mutex);

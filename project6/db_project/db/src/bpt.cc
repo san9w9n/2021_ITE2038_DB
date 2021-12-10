@@ -5,6 +5,8 @@
 #define MAX_ORDER 249
 #define PGSIZE 4096
 
+pthread_mutex_t index_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 int64_t open_table(char* pathname) { return file_open_via_buffer(pathname); }
 
 int shutdown_db() { return shutdown_trx(); }
@@ -63,9 +65,10 @@ int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t* val_size,
   page_id = header->root_num;
   if (!page_id) return 1;
 
-  page = buffer_read_page(table_id, page_id, &page_idx, READ);
-
+  LOCK(index_mutex);
+  page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
   while (!page->info.isLeaf) {
+    buffer_write_page(table_id, page_id, page_idx, 0);
     if (key < page->branch[0].key)
       page_id = page->leftmost;
     else {
@@ -74,26 +77,32 @@ int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t* val_size,
         if (key < page->branch[i + 1].key) break;
       page_id = page->branch[i].pagenum;
     }
-    page = buffer_read_page(table_id, page_id, &page_idx, READ);
+    page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
   }
-
+  UNLOCK(index_mutex);
+  
   for (key_index = 0; key_index < page->info.num_keys; key_index++) {
     if (page->leafbody.slot[key_index].key == key) break;
   }
-  if (key_index == page->info.num_keys) return 1;
+  if (key_index == page->info.num_keys) {
+    buffer_write_page(table_id, page_id, page_idx, 0);
+    return 1;
+  }
 
-  flag = lock_acquire(table_id, page_id, key, key_index, trx_id, SHARED, 0, 0);
+  flag = lock_acquire(table_id, page_id, key, key_index, trx_id, SHARED, page, page_idx);
   if (flag == DEADLOCK) {
+    buffer_write_page(table_id, page_id, page_idx, 0);
     trx_abort(trx_id);
     return 1;
   }
 
-  page = buffer_read_page(table_id, page_id, &page_idx, READ);
   offset = page->leafbody.slot[key_index].offset - 128;
   size = page->leafbody.slot[key_index].size;
   for (int i = offset, j = 0; i < offset + size; j++, i++)
     ret_val[j] = page->leafbody.value[i];
   *val_size = size;
+
+  buffer_write_page(table_id, page_id, page_idx, 0);
 
   return 0;
 }
@@ -126,6 +135,7 @@ int db_update(int64_t table_id, int64_t key, char* values,
   page_id = header->root_num;
   if (!page_id) return 1;
 
+  LOCK(index_mutex);
   page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
   while (!page->info.isLeaf) {
 		buffer_write_page(table_id, page_id, page_idx, 0);
@@ -139,14 +149,17 @@ int db_update(int64_t table_id, int64_t key, char* values,
     }
     page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
   }
+  UNLOCK(index_mutex);
 
   for (key_index = 0; key_index < page->info.num_keys; key_index++) {
     if (page->leafbody.slot[key_index].key == key) break;
   }
-  if (key_index == page->info.num_keys) return 1;
+  if (key_index == page->info.num_keys) {
+    buffer_write_page(table_id, page_id, page_idx, 0);
+    return 1;
+  }
 
-  flag = lock_acquire(table_id, page_id, key, key_index, trx_id, EXCLUSIVE,
-                      page, page_idx);
+  flag = lock_acquire(table_id, page_id, key, key_index, trx_id, EXCLUSIVE, page, page_idx);
   if (flag == DEADLOCK) {
     buffer_write_page(table_id, page_id, page_idx, 0);
     trx_abort(trx_id);
@@ -160,13 +173,12 @@ int db_update(int64_t table_id, int64_t key, char* values,
   for (int i = offset, j = 0; i < offset + size; j++, i++)
     old_value[j] = page->leafbody.value[i];
 
-  main_log = make_main_log(trx_id, UPDATE, MAINLOG + UPDATELOG + 2 * size,
-                           trx->last_LSN);
-  update_log_t = make_update_log(table_id, page_id, size, offset + 128);
+  main_log = make_main_log(trx_id, UPDATE, MAINLOG + UPDATELOG + 2 * new_val_size, trx->last_LSN);
+  update_log_t = make_update_log(table_id, page_id, new_val_size, offset + 128);
   page->LSN = main_log->LSN;
-  old_img = new char[size + 2]();
-  new_img = new char[size + 2]();
-  for (int i = 0; i < size; i++) {
+  old_img = new char[new_val_size + 2]();
+  new_img = new char[new_val_size + 2]();
+  for (int i = 0; i < new_val_size; i++) {
     old_img[i] = page->leafbody.value[i + offset];
     new_img[i] = values[i];
   }
@@ -177,16 +189,17 @@ int db_update(int64_t table_id, int64_t key, char* values,
   for (int i = offset, j = 0; i < offset + new_val_size; j++, i++)
     page->leafbody.value[i] = values[j];
   page->leafbody.slot[key_index].size = new_val_size;
-  buffer_write_page(table_id, page_id, page_idx, 1);
 
   trx = give_trx(trx_id);
   undo = new undo_t;
   undo->old_value = new char[size + 1];
   undo->table_id = table_id;
+  undo->page_id = page_id;
   undo->key = key;
   undo->val_size = size;
   for (int k = 0; k < size; k++) undo->old_value[k] = old_value[k];
   trx->undo_stack.push(undo);
+  buffer_write_page(table_id, page_id, page_idx, 1);
 
   delete[] old_value;
 
