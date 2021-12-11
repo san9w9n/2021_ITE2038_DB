@@ -25,7 +25,7 @@ pagenum_t find_leaf(int64_t table_id, pagenum_t root_num, int64_t key) {
   pagenum_t ret_num = root_num;
   int32_t root_idx, next_idx;
   page_t* root;
-  root = buffer_read_page(table_id, root_num, &root_idx, READ, false);
+  root = buffer_read_page(table_id, root_num, &root_idx, READ);
 
   while (!root->info.isLeaf) {
     if (key < root->branch[0].key)
@@ -37,7 +37,7 @@ pagenum_t find_leaf(int64_t table_id, pagenum_t root_num, int64_t key) {
       }
       ret_num = root->branch[i].pagenum;
     }
-    root = buffer_read_page(table_id, ret_num, &next_idx, READ, false);
+    root = buffer_read_page(table_id, ret_num, &next_idx, READ);
   }
 
   return ret_num;
@@ -62,13 +62,13 @@ int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t* val_size,
   if (!isValid(table_id)) return 1;
   if (!(trx = give_trx(trx_id))) return 1;
 
-  header = buffer_read_page(table_id, 0, &header_idx, READ, true);
+  header = buffer_read_page(table_id, 0, &header_idx, READ);
   page_id = header->root_num;
   if (!page_id) {
     return 1;
   }
 
-  page = buffer_read_page(table_id, page_id, &page_idx, WRITE, true);
+  page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
   while (!(page->info.isLeaf)) {
     prev_idx = page_idx;
     if (key < page->branch[0].key)
@@ -79,7 +79,7 @@ int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t* val_size,
         if (key < page->branch[i + 1].key) break;
       page_id = page->branch[i].pagenum;
     }
-    page = buffer_read_page(table_id, page_id, &page_idx, WRITE, true);
+    page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
     buffer_write_page(table_id, page_id, prev_idx, 0);
   }
   
@@ -133,13 +133,13 @@ int db_update(int64_t table_id, int64_t key, char* values,
   if (!isValid(table_id)) return 1;
   if (!(trx = give_trx(trx_id))) return 1;
 
-  header = buffer_read_page(table_id, 0, &header_idx, READ, true);
+  header = buffer_read_page(table_id, 0, &header_idx, READ);
   page_id = header->root_num;
   if (!page_id) {
     return 1;
   }
 
-  page = buffer_read_page(table_id, page_id, &page_idx, WRITE, true);
+  page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
   while (!(page->info.isLeaf)) {
     prev_idx = page_idx;
     if (key < page->branch[0].key)
@@ -150,7 +150,7 @@ int db_update(int64_t table_id, int64_t key, char* values,
         if (key < page->branch[i + 1].key) break;
       page_id = page->branch[i].pagenum;
     }
-    page = buffer_read_page(table_id, page_id, &page_idx, WRITE, true);
+    page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
     buffer_write_page(table_id, page_id, prev_idx, 0);
   }
 
@@ -255,8 +255,7 @@ int insert_into_internal_after_splitting(int64_t table_id, uint32_t index,
 
   new_parent_num = buffer_alloc_page(table_id);
   new_parent =
-      buffer_read_page(table_id, new_parent_num, &new_parent_idx, WRITE, false);
-  new_parent->parent_num = parent->parent_num;
+      buffer_read_page(table_id, new_parent_num, &new_parent_idx, WRITE);
   new_parent->info.isLeaf = parent->info.isLeaf;
   new_parent->info.num_keys = parent->info.num_keys = 0;
 
@@ -267,7 +266,7 @@ int insert_into_internal_after_splitting(int64_t table_id, uint32_t index,
   }
   new_parent->leftmost = tmp[split].pagenum;
 
-  child = buffer_read_page(table_id, new_parent->leftmost, &child_idx, WRITE, false);
+  child = buffer_read_page(table_id, new_parent->leftmost, &child_idx, WRITE);
   child->parent_num = new_parent_num;
   buffer_write_page(table_id, new_parent->leftmost, child_idx, 1);
 
@@ -275,7 +274,7 @@ int insert_into_internal_after_splitting(int64_t table_id, uint32_t index,
     new_parent->branch[j].key = tmp[i].key;
     new_parent->branch[j].pagenum = tmp[i].pagenum;
 
-    child = buffer_read_page(table_id, tmp[i].pagenum, &child_idx, WRITE, false);
+    child = buffer_read_page(table_id, tmp[i].pagenum, &child_idx, WRITE);
     child->parent_num = new_parent_num;
     buffer_write_page(table_id, tmp[i].pagenum, child_idx, 1);
     new_parent->info.num_keys++;
@@ -302,9 +301,9 @@ int insert_into_parent(int64_t table_id, pagenum_t l_num, page_t* l,
     pagenum_t new_root_num;
     int32_t new_root_idx, header_idx;
     new_root_num = buffer_alloc_page(table_id);
-    new_root = buffer_read_page(table_id, new_root_num, &new_root_idx, WRITE, false);
+    new_root = buffer_read_page(table_id, new_root_num, &new_root_idx, WRITE);
 
-    header = buffer_read_page(table_id, 0, &header_idx, WRITE, false);
+    header = buffer_read_page(table_id, 0, &header_idx, WRITE);
     header->root_num = new_root_num;
     buffer_write_page(table_id, 0, header_idx, 1);
 
@@ -322,7 +321,7 @@ int insert_into_parent(int64_t table_id, pagenum_t l_num, page_t* l,
 
     return 0;
   }
-  parent = buffer_read_page(table_id, parent_num, &parent_idx, WRITE, false);
+  parent = buffer_read_page(table_id, parent_num, &parent_idx, WRITE);
 
   uint32_t i;
   for (i = 0; i < parent->info.num_keys; i++) {
@@ -391,7 +390,7 @@ int insert_into_leaf_after_splitting(int64_t table_id, uint32_t index,
     }
   }
   new_leaf_num = buffer_alloc_page(table_id);
-  new_leaf = buffer_read_page(table_id, new_leaf_num, &new_leaf_idx, WRITE, false);
+  new_leaf = buffer_read_page(table_id, new_leaf_num, &new_leaf_idx, WRITE);
 
   new_leaf->parent_num = leaf->parent_num;
   new_leaf->info.isLeaf = leaf->info.isLeaf;
@@ -571,9 +570,9 @@ int start_new_tree(int64_t table_id, int64_t key, char* value,
   page_t *new_root, *header;
 
   new_root_num = buffer_alloc_page(table_id);
-  new_root = buffer_read_page(table_id, new_root_num, &root_idx, WRITE, false);
+  new_root = buffer_read_page(table_id, new_root_num, &root_idx, WRITE);
 
-  header = buffer_read_page(table_id, 0, &header_idx, WRITE, false);
+  header = buffer_read_page(table_id, 0, &header_idx, WRITE);
   header->root_num = new_root_num;
   buffer_write_page(table_id, 0, header_idx, 1);
 
@@ -600,12 +599,12 @@ int db_insert(int64_t table_id, int64_t key, char* value, uint16_t val_size) {
 
   if (!isValid(table_id)) return 1;
 
-  header = buffer_read_page(table_id, 0, &header_idx, READ, false);
+  header = buffer_read_page(table_id, 0, &header_idx, READ);
   root_num = header->root_num;
   if (!root_num) return start_new_tree(table_id, key, value, val_size);
 
   leaf_num = find_leaf(table_id, root_num, key);
-  leaf = buffer_read_page(table_id, leaf_num, &leaf_idx, WRITE, false);
+  leaf = buffer_read_page(table_id, leaf_num, &leaf_idx, WRITE);
 
   uint32_t i;
   for (i = 0; i < leaf->info.num_keys; i++) {
@@ -628,7 +627,7 @@ int get_my_index(int64_t table_id, pagenum_t pagenum, page_t* page) {
   int i;
   int32_t parent_idx;
 
-  parent = buffer_read_page(table_id, page->parent_num, &parent_idx, READ, false);
+  parent = buffer_read_page(table_id, page->parent_num, &parent_idx, READ);
   if (parent->leftmost == pagenum) {
     return -1;
   }
@@ -712,7 +711,7 @@ int adjust_root(int64_t table_id, pagenum_t root_num, page_t* root,
     page_t *header, *new_root;
     int header_idx, new_root_idx;
 
-    header = buffer_read_page(table_id, 0, &header_idx, WRITE, false);
+    header = buffer_read_page(table_id, 0, &header_idx, WRITE);
 
     if (root->info.isLeaf) {
       header->root_num = 0;
@@ -720,7 +719,7 @@ int adjust_root(int64_t table_id, pagenum_t root_num, page_t* root,
       header->root_num = root->leftmost;
 
       new_root =
-          buffer_read_page(table_id, root->leftmost, &new_root_idx, WRITE, false);
+          buffer_read_page(table_id, root->leftmost, &new_root_idx, WRITE);
       new_root->parent_num = 0;
       buffer_write_page(table_id, root->leftmost, new_root_idx, 1);
     }
@@ -876,7 +875,7 @@ int coalesce_internal(int64_t table_id, int my_index, pagenum_t parent_num,
   sibling->branch[sibling->info.num_keys].pagenum = page->leftmost;
   sibling->info.num_keys++;
 
-  child = buffer_read_page(table_id, page->leftmost, &child_idx, WRITE, false);
+  child = buffer_read_page(table_id, page->leftmost, &child_idx, WRITE);
   child->parent_num = sibling_num;
   buffer_write_page(table_id, page->leftmost, child_idx, 1);
 
@@ -888,7 +887,7 @@ int coalesce_internal(int64_t table_id, int my_index, pagenum_t parent_num,
     sibling->info.num_keys++;
 
     child = buffer_read_page(table_id, sibling->branch[i].pagenum, &child_idx,
-                             WRITE, false);
+                             WRITE);
     child->parent_num = sibling_num;
     buffer_write_page(table_id, sibling->branch[i].pagenum, child_idx, 1);
   }
@@ -911,7 +910,7 @@ int redistribute_internal(int64_t table_id, pagenum_t parent_num,
     page->branch[page->info.num_keys].key = parent->branch[0].key;
     page->branch[page->info.num_keys].pagenum = sibling->leftmost;
 
-    child = buffer_read_page(table_id, sibling->leftmost, &child_idx, WRITE, false);
+    child = buffer_read_page(table_id, sibling->leftmost, &child_idx, WRITE);
     child->parent_num = page_num;
     buffer_write_page(table_id, sibling->leftmost, child_idx, 1);
 
@@ -935,11 +934,11 @@ int redistribute_internal(int64_t table_id, pagenum_t parent_num,
     page->leftmost = sibling->branch[sibling->info.num_keys - 1].pagenum;
 
     child =
-        buffer_read_page(table_id, page->branch[0].pagenum, &child_idx, WRITE, false);
+        buffer_read_page(table_id, page->branch[0].pagenum, &child_idx, WRITE);
     child->parent_num = page_num;
     buffer_write_page(table_id, page->branch[0].pagenum, child_idx, 1);
 
-    child = buffer_read_page(table_id, page->leftmost, &child_idx, WRITE, false);
+    child = buffer_read_page(table_id, page->leftmost, &child_idx, WRITE);
     child->parent_num = page_num;
     buffer_write_page(table_id, page->leftmost, child_idx, 1);
 
@@ -988,7 +987,7 @@ int delete_entry(int64_t table_id, pagenum_t page_num, page_t* page,
       return 1;
     }
 
-    parent = buffer_read_page(table_id, page->parent_num, &parent_idx, WRITE, false);
+    parent = buffer_read_page(table_id, page->parent_num, &parent_idx, WRITE);
 
     if (my_index == -1)
       sibling_num = parent->branch[0].pagenum;
@@ -997,7 +996,7 @@ int delete_entry(int64_t table_id, pagenum_t page_num, page_t* page,
     else
       sibling_num = parent->branch[my_index - 1].pagenum;
 
-    sibling = buffer_read_page(table_id, sibling_num, &sibling_idx, WRITE, false);
+    sibling = buffer_read_page(table_id, sibling_num, &sibling_idx, WRITE);
 
     if (sibling->freespace >= INITIAL_FREE - page->freespace) {
       if (my_index == -1)
@@ -1028,7 +1027,7 @@ int delete_entry(int64_t table_id, pagenum_t page_num, page_t* page,
       return 0;
     }
     my_index = get_my_index(table_id, page_num, page);
-    parent = buffer_read_page(table_id, page->parent_num, &parent_idx, WRITE, false);
+    parent = buffer_read_page(table_id, page->parent_num, &parent_idx, WRITE);
 
     if (my_index == -1)
       sibling_num = parent->branch[0].pagenum;
@@ -1037,7 +1036,7 @@ int delete_entry(int64_t table_id, pagenum_t page_num, page_t* page,
     else
       sibling_num = parent->branch[my_index - 1].pagenum;
 
-    sibling = buffer_read_page(table_id, sibling_num, &sibling_idx, WRITE, false);
+    sibling = buffer_read_page(table_id, sibling_num, &sibling_idx, WRITE);
 
     if (sibling->info.num_keys + page->info.num_keys < capacity) {
       if (my_index == -1)
@@ -1063,12 +1062,12 @@ int db_delete(int64_t table_id, int64_t key) {
 
   if (!isValid(table_id)) return 1;
 
-  header = buffer_read_page(table_id, 0, &header_idx, READ, false);
+  header = buffer_read_page(table_id, 0, &header_idx, READ);
   root_num = header->root_num;
   if (!root_num) return 1;
 
   leaf_num = find_leaf(table_id, root_num, key);
-  leaf = buffer_read_page(table_id, leaf_num, &leaf_idx, WRITE, false);
+  leaf = buffer_read_page(table_id, leaf_num, &leaf_idx, WRITE);
 
   return delete_entry(table_id, leaf_num, leaf, leaf_idx, key);
 }

@@ -104,7 +104,7 @@ int give_idx() {
 int init_buffer(int num_buf) {
   if (!frames) {
     buf_mutex = PTHREAD_MUTEX_INITIALIZER;
-    if (num_buf < 100) num_buf = 100;
+    if (num_buf < 200) num_buf = 200;
     frames = (frame_t*)malloc(sizeof(frame_t) * num_buf);
     for (int i = 0; i < num_buf; i++) {
       frames[i].page = (page_t*)malloc(PGSIZE);
@@ -274,7 +274,7 @@ void buffer_free_page(int64_t table_id, pagenum_t pagenum, int32_t idx) {
 }
 
 page_t* buffer_read_page(int64_t table_id, pagenum_t pagenum, int* idx,
-                         bool mode, bool multithread) {
+                         bool mode) {
   int hit;
   page_t* ret;
   int flag = 0;
@@ -283,14 +283,11 @@ RETRY:
   LOCK(buf_mutex);
   hit = hit_idx(table_id, pagenum);
   if (hit >= 0) {
-    if(multithread) {
-      if(frames[hit].state == LOCKED) {
-        UNLOCK(buf_mutex);
-        goto RETRY;
-      }
+    if(pthread_mutex_trylock(&frames[hit].page_mutex)) {
+      UNLOCK(buf_mutex);
+      goto RETRY;
     }
     frames[hit].state = LOCKED;
-    LOCK(frames[hit].page_mutex);
     UNLOCK(buf_mutex);
     *idx = hit;
     frames[hit].is_buf = 1;
@@ -306,14 +303,11 @@ RETRY:
   else {
     hit = give_idx();
   }
-  if(multithread) {
-    if(frames[hit].state == LOCKED) {
-      UNLOCK(buf_mutex);
-      goto RETRY;
-    }
+  if(pthread_mutex_trylock(&frames[hit].page_mutex)) {
+    UNLOCK(buf_mutex);
+    goto RETRY;
   }
   frames[hit].state = LOCKED;
-  LOCK(frames[hit].page_mutex);
   UNLOCK(buf_mutex);
   *idx = hit;
   file_read_page(table_id, pagenum, frames[hit].page);

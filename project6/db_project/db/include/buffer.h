@@ -43,7 +43,7 @@ int init_buffer(int num_buf);
 int64_t file_open_via_buffer(char* pathname);
 pagenum_t buffer_alloc_page(int64_t table_id);
 void buffer_free_page(int64_t table_id, pagenum_t pagenum, int32_t idx);
-page_t* buffer_read_page(int64_t table_id, pagenum_t pagenum, int* idx, bool mode, bool multithread);
+page_t* buffer_read_page(int64_t table_id, pagenum_t pagenum, int* idx, bool mode);
 void buffer_write_page(int64_t table_id, pagenum_t pagenum, int32_t idx, bool success);
 int shutdown_buffer();
 
