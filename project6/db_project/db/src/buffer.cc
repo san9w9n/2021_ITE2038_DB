@@ -19,7 +19,6 @@ int find_empty_frame(int64_t table_id, pagenum_t pagenum) {
   while (frames[i].is_buf) {
     i = (i + 1) % tablesize;
   }
-  frames[i].state = UNLOCKED;
   append_LRU(i);
   return i;
 }
@@ -103,7 +102,7 @@ int give_idx() {
 int init_buffer(int num_buf) {
   if (!frames) {
     buf_mutex = PTHREAD_MUTEX_INITIALIZER;
-    if (num_buf < 5) num_buf = 5;
+    if (num_buf < 1000) num_buf = 1000;
     frames = (frame_t*)malloc(sizeof(frame_t) * num_buf);
     for (int i = 0; i < num_buf; i++) {
       frames[i].page = (page_t*)malloc(PGSIZE);
@@ -112,6 +111,7 @@ int init_buffer(int num_buf) {
       frames[i].nextLRU = frames[i].prevLRU = -1;
       frames[i].table_id = frames[i].is_dirty = frames[i].is_buf = 0;
       frames[i].page_mutex = PTHREAD_MUTEX_INITIALIZER;
+      frames[i].state = UNLOCKED;
     }
     num_frames = 0;
     num_bufs = num_buf;
