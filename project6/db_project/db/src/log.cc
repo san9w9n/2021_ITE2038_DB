@@ -25,7 +25,9 @@ int init_log(int flag, int log_num, char* log_path, char* logmsg_path) {
     header_log->last_trx_id = 0;
     pwrite(logFD, header_log, HEADERLOG, 0);
     fsync(logFD);
-  } else {
+  } 
+  
+  else if(header_log->flushed_LSN > HEADERLOG) {
     analysis();
     if (flag == REDO_CRASH) 
       redo(log_num);
@@ -39,6 +41,13 @@ int init_log(int flag, int log_num, char* log_path, char* logmsg_path) {
     }
     log_flush();
     buffer_flush();
+    file_close_table_files();
+
+    if(flag == RECOVERY) {
+      header_log->flushed_LSN = HEADERLOG;
+      pwrite(logFD, header_log, HEADERLOG, 0);
+      ftruncate(logFD, HEADERLOG);
+    }
   }
   return 0;
 }

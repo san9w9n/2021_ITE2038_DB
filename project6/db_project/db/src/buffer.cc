@@ -286,7 +286,6 @@ RETRY:
     if(frames[hit].state == LOCKED) {
       UNLOCK(buf_mutex);
       goto RETRY;
-      return nullptr;
     }
     frames[hit].state = LOCKED;
     LOCK(frames[hit].page_mutex);
@@ -330,8 +329,8 @@ RETRY:
 void buffer_write_page(int64_t table_id, pagenum_t pagenum, int32_t idx,
                        bool success) {
   if (success) frames[idx].is_dirty = 1;
-  UNLOCK(frames[idx].page_mutex);
   frames[idx].state = UNLOCKED;
+  UNLOCK(frames[idx].page_mutex);
 }
 
 void buffer_flush()

@@ -400,7 +400,7 @@ int lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
         if (deadlock_detect(trx_id)) { 
           buffer_write_page(table_id, page_id, page_idx, 0);
           UNLOCK(lock_mutex);
-          return page_idx;
+          return DEAD_LOCK;
         }
         buffer_write_page(table_id, page_id, page_idx, 0);
         WAIT(point->cond, lock_mutex);
@@ -487,7 +487,7 @@ int lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
       if (deadlock_detect(trx_id)) {
         buffer_write_page(table_id, page_id, page_idx, 0);
         UNLOCK(lock_mutex);
-        return page_idx;
+        return DEAD_LOCK;
       }
       buffer_write_page(table_id, page_id, page_idx, 0);
       WAIT(point->cond, lock_mutex);
