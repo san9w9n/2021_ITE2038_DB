@@ -155,7 +155,7 @@ int trx_abort(int trx_id) {
     page_id = undo->page_id;
     key = undo->key;
     
-    page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
+    page = buffer_read_page(table_id, page_id, &page_idx, WRITE, true);
 
     for(i=0; i<page->info.num_keys; i++)
       if(page->leafbody.slot[i].key == key) break;
@@ -405,7 +405,7 @@ int lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
         buffer_write_page(table_id, page_id, page_idx, 0);
         WAIT(point->cond, lock_mutex);
         UNLOCK(lock_mutex);
-        page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
+        page = buffer_read_page(table_id, page_id, &page_idx, WRITE, true);
         LOCK(lock_mutex);
         trx->wait_trx_id = 0;
         point = entry->head;
@@ -492,7 +492,7 @@ int lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
       buffer_write_page(table_id, page_id, page_idx, 0);
       WAIT(point->cond, lock_mutex);
       UNLOCK(lock_mutex);
-      page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
+      page = buffer_read_page(table_id, page_id, &page_idx, WRITE, true);
       LOCK(lock_mutex);
       trx->wait_trx_id = 0;
       point = entry->head;

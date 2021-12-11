@@ -274,7 +274,7 @@ void buffer_free_page(int64_t table_id, pagenum_t pagenum, int32_t idx) {
 }
 
 page_t* buffer_read_page(int64_t table_id, pagenum_t pagenum, int* idx,
-                         bool mode) {
+                         bool mode, bool multithread) {
   int hit;
   page_t* ret;
   int flag = 0;
@@ -283,9 +283,11 @@ RETRY:
   LOCK(buf_mutex);
   hit = hit_idx(table_id, pagenum);
   if (hit >= 0) {
-    if(frames[hit].state == LOCKED) {
-      UNLOCK(buf_mutex);
-      goto RETRY;
+    if(multithread) {
+      if(frames[hit].state == LOCKED) {
+        UNLOCK(buf_mutex);
+        goto RETRY;
+      }
     }
     frames[hit].state = LOCKED;
     LOCK(frames[hit].page_mutex);
@@ -304,10 +306,11 @@ RETRY:
   else {
     hit = give_idx();
   }
-  if(frames[hit].state == LOCKED) {
-    UNLOCK(buf_mutex);
-    goto RETRY;
-    return nullptr;
+  if(multithread) {
+    if(frames[hit].state == LOCKED) {
+      UNLOCK(buf_mutex);
+      goto RETRY;
+    }
   }
   frames[hit].state = LOCKED;
   LOCK(frames[hit].page_mutex);

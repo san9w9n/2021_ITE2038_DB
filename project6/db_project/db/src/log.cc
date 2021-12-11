@@ -226,7 +226,7 @@ void redo(int log_num) {
       page_id = update_log->page_id;
       open_recovery_table(table_id);
 
-      page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
+      page = buffer_read_page(table_id, page_id, &page_idx, WRITE, true);
       if (page->LSN < LSN) 
       {
         new_img = new char[valsize + 2];
@@ -348,7 +348,7 @@ void undo(int log_num) {
       next_undo_LSN = (main_log->type == UPDATE) ? prev_LSN : 0;
 
       open_recovery_table(table_id);
-      page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
+      page = buffer_read_page(table_id, page_id, &page_idx, WRITE, true);
       new_main_log = make_main_log(trx_id, COMPENSATE, MAINLOG + UPDATELOG + (2*size) + 8, next_undo_LSN);
       new_update_log = make_update_log(table_id, page_id, size, offset+128);
       loser_trx->last_LSN = new_main_log->LSN;
