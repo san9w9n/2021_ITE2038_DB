@@ -229,7 +229,6 @@ void redo(int log_num) {
           fprintf(logmsgFP, "LSN %lu [UPDATE] Transaction id %d redo apply\n", LSN, main_log->trx_id);
         else {
           pread(logFD, &next_undo_LSN, 8, LSN+MAINLOG+UPDATELOG+(2*valsize));
-          printf("%lu!!\n", valsize);
           fprintf(logmsgFP, "LSN %lu [CLR] next undo lsn %lu\n", LSN, next_undo_LSN);
         }
         buffer_write_page(table_id, page_id, page_idx, 1);
