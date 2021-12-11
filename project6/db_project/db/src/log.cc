@@ -348,25 +348,16 @@ void undo(int log_num) {
 
       open_recovery_table(table_id);
       page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
-      if (page->LSN >= LSN) 
-      {
-        new_main_log = make_main_log(trx_id, COMPENSATE, MAINLOG + UPDATELOG + (2*size) + 8, next_undo_LSN);
-        new_update_log = make_update_log(table_id, page_id, size, offset+128);
-        loser_trx->last_LSN = new_main_log->LSN;
-        push_log_to_buffer(new_main_log, new_update_log, old_img, new_img, next_undo_LSN);
+      new_main_log = make_main_log(trx_id, COMPENSATE, MAINLOG + UPDATELOG + (2*size) + 8, next_undo_LSN);
+      new_update_log = make_update_log(table_id, page_id, size, offset+128);
+      loser_trx->last_LSN = new_main_log->LSN;
+      push_log_to_buffer(new_main_log, new_update_log, old_img, new_img, next_undo_LSN);
 
-        for (int i=0; i<size; i++)
-          page->leafbody.value[i+offset] = new_img[i];
-        fprintf(logmsgFP, "LSN %lu [UPDATE] Transaction id %d undo apply\n", LSN, trx_id);
-        buffer_write_page(table_id, page_id, page_idx, 1);
-      } 
-      else 
-      {
-        fprintf(logmsgFP, "LSN %lu [CONSIDER-UNDO] Transaction id %d\n", LSN, trx_id);
-        buffer_write_page(table_id, page_id, page_idx, 0);
-        delete[] new_img;
-        delete[] old_img;
-      }
+      for (int i=0; i<size; i++)
+        page->leafbody.value[i+offset] = new_img[i];
+      page->LSN = LSN;
+      fprintf(logmsgFP, "LSN %lu [UPDATE] Transaction id %d undo apply\n", LSN, trx_id);
+      buffer_write_page(table_id, page_id, page_idx, 1);
 
       if(!next_undo_LSN) {
         rollback_log = make_main_log(trx_id, ROLLBACK, MAINLOG, loser_trx->last_LSN);
