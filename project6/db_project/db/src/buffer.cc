@@ -334,6 +334,22 @@ void buffer_write_page(int64_t table_id, pagenum_t pagenum, int32_t idx,
   frames[idx].state = UNLOCKED;
 }
 
+void buffer_flush()
+{
+  for (int i = 0; i < num_bufs; i++) {
+    if (frames[i].is_buf && frames[i].is_dirty) 
+      file_write_page(frames[i].table_id, frames[i].page_num, frames[i].page);
+    frames[i].page_num = 0;
+    frames[i].nextLRU = frames[i].prevLRU = -1;
+    frames[i].table_id = frames[i].is_dirty = frames[i].is_buf = 0;
+    frames[i].page_mutex = PTHREAD_MUTEX_INITIALIZER;
+    frames[i].state = UNLOCKED;
+  }
+  buf_mutex = PTHREAD_MUTEX_INITIALIZER;
+  num_frames = 0;
+  firstLRU = lastLRU = -1;
+}
+
 int shutdown_buffer() {
   for (int i = 0; i < num_bufs; i++) {
     if (frames[i].is_buf && frames[i].is_dirty) {

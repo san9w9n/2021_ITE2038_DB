@@ -29,6 +29,7 @@ typedef struct buffer_pool_t {
   int lastLRU;
 } buffer_pool_t;
 
+void buffer_flush();
 page_t* buffer_read_page_without_latch(int page_idx);
 int buf_hashFunction(int64_t table_id, pagenum_t pagenum);
 int find_empty_frame(int64_t table_id, pagenum_t pagenum);

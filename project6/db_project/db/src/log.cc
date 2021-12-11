@@ -27,17 +27,18 @@ int init_log(int flag, int log_num, char* log_path, char* logmsg_path) {
     fsync(logFD);
   } else {
     analysis();
-    if (flag == REDO_CRASH) {
+    if (flag == REDO_CRASH) 
       redo(log_num);
-      return 0;
-    }
-    redo(-1);
-    if (flag == UNDO_CRASH)
+    else if (flag == UNDO_CRASH) {
+      redo(-1);
       undo(log_num);
-    else {
-      undo(-1);
-      log_flush();
     }
+    else {
+      redo(-1);
+      undo(-1);
+    }
+    log_flush();
+    buffer_flush();
   }
   return 0;
 }
