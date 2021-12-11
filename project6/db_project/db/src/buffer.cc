@@ -19,6 +19,7 @@ int find_empty_frame(int64_t table_id, pagenum_t pagenum) {
   while (frames[i].is_buf) {
     i = (i + 1) % tablesize;
   }
+  frames[i].state = UNLOCKED;
   append_LRU(i);
   return i;
 }
@@ -274,9 +275,15 @@ page_t* buffer_read_page(int64_t table_id, pagenum_t pagenum, int* idx,
                          bool mode) {
   int hit;
   page_t* ret;
+
+REACQUIRE:
   LOCK(buf_mutex);
   hit = hit_idx(table_id, pagenum);
   if (hit >= 0) {
+    if(frames[hit].state == LOCKED) {
+      UNLOCK(buf_mutex);
+      goto REACQUIRE;
+    }
     frames[hit].state = LOCKED;
     LOCK(frames[hit].page_mutex);
     UNLOCK(buf_mutex);
@@ -291,8 +298,13 @@ page_t* buffer_read_page(int64_t table_id, pagenum_t pagenum, int* idx,
   }
   if (num_frames < num_bufs)
     hit = find_empty_frame(table_id, pagenum);
-  else
+  else {
     hit = give_idx();
+  }
+  if(frames[hit].state == LOCKED) {
+    UNLOCK(buf_mutex);
+    goto REACQUIRE;
+  }
   frames[hit].state = LOCKED;
   LOCK(frames[hit].page_mutex);
   UNLOCK(buf_mutex);
@@ -313,8 +325,8 @@ page_t* buffer_read_page(int64_t table_id, pagenum_t pagenum, int* idx,
 void buffer_write_page(int64_t table_id, pagenum_t pagenum, int32_t idx,
                        bool success) {
   if (success) frames[idx].is_dirty = 1;
-  frames[idx].state = UNLOCKED;
   UNLOCK(frames[idx].page_mutex);
+  frames[idx].state = UNLOCKED;
 }
 
 int shutdown_buffer() {
