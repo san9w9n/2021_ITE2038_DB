@@ -63,7 +63,6 @@ int trx_begin(void) {
 
   main_log = make_main_log(trx->trx_id, BEGIN, MAINLOG, trx->last_LSN);
   trx->last_LSN = main_log->LSN;
-  make_active_trx(trx->trx_id, main_log->LSN);
   push_log_to_buffer(main_log, 0, 0, 0, 0);
 
   return trx->trx_id;
@@ -108,8 +107,6 @@ int trx_commit(int trx_id) {
   trx->last_LSN = main_log->LSN;
   push_log_to_buffer(main_log, 0, 0, 0, 0);
   log_flush();
-
-  erase_active_trx(trx_id);
 
   delete trx;
 
@@ -159,13 +156,11 @@ int trx_abort(int trx_id) {
     key = undo->key;
     
     page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
+
     for(i=0; i<page->info.num_keys; i++)
       if(page->leafbody.slot[i].key == key) break;
     size = undo->val_size;
     offset = page->leafbody.slot[i].offset - 128;
-
-    pop_update_stack(trx_id);
-    next_undo_LSN = top_update_stack(trx_id);
 
     main_log = make_main_log(trx_id, COMPENSATE, MAINLOG + UPDATELOG + 2 * size + 8, trx->last_LSN);
     update_log = make_update_log(table_id, page_id, size, offset + 128);
@@ -176,6 +171,7 @@ int trx_abort(int trx_id) {
       old_img[k] = page->leafbody.value[k + offset];
       new_img[k] = undo->old_value[k];
     }
+    next_undo_LSN = (trx->undo_stack.empty()) ? 0 : trx->undo_stack.top()->LSN;
     push_log_to_buffer(main_log, update_log, old_img, new_img, next_undo_LSN);
 
     trx->last_LSN = main_log->LSN;
@@ -196,7 +192,6 @@ int trx_abort(int trx_id) {
   push_log_to_buffer(main_log, 0, 0, 0, 0);
   log_flush();
 
-  erase_active_trx(trx_id);
   delete trx;
 
   return trx_id;
@@ -409,7 +404,9 @@ int lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
         }
         buffer_write_page(table_id, page_id, page_idx, 0);
         WAIT(point->cond, lock_mutex);
-        buffer_read_page(table_id, page_id, &page_idx, WRITE);
+        UNLOCK(lock_mutex);
+        page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
+        LOCK(lock_mutex);
         trx->wait_trx_id = 0;
         point = entry->head;
         continue;
@@ -494,7 +491,9 @@ int lock_acquire(int64_t table_id, pagenum_t page_id, int64_t key, int kindex,
       }
       buffer_write_page(table_id, page_id, page_idx, 0);
       WAIT(point->cond, lock_mutex);
+      UNLOCK(lock_mutex);
       page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
+      LOCK(lock_mutex);
       trx->wait_trx_id = 0;
       point = entry->head;
       continue;

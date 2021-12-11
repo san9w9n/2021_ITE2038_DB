@@ -45,17 +45,15 @@ typedef struct __attribute__((__packed__)) update_log_t {
   uint16_t valsize;
 } update_log_t;
 
-typedef struct active_trx_t {
+typedef struct loser_trx_t {
+  int trx_id;
   LSN_t begin_LSN;
   LSN_t last_LSN;
-  std::stack<LSN_t> update_LSN_stack;
 } active_trx;
-typedef std::unordered_map<int, active_trx*> activetrans_t;
+typedef std::unordered_map<int, active_trx*> loser_trx_map_t;
 
 typedef std::priority_queue<LSN_t> priority_table_t;
 
-void make_active_trx(int trx_id, LSN_t first_LSN);
-void erase_active_trx(int trx_id);
 void file_read_mainlog(main_log_t* main_log, LSN_t LSN);
 void push_log_to_buffer(main_log_t* main_log, update_log_t* update_log,
                         char* old_img, char* new_img, LSN_t next_undo_LSN);
@@ -66,10 +64,7 @@ void analysis();
 int last_trx_id();
 int init_log(int flag, int log_num, char* log_path, char* logmsg_path);
 void log_flush();
-void push_update_stack(int trx_id, LSN_t LSN);
-void pop_update_stack(int trx_id);
 int shutdown_log();
-LSN_t top_update_stack(int trx_id);
 void redo(int log_num);
 void undo(int log_num);
 

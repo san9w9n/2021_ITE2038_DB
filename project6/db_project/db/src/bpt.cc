@@ -5,8 +5,6 @@
 #define MAX_ORDER 249
 #define PGSIZE 4096
 
-pthread_mutex_t index_mutex = PTHREAD_MUTEX_INITIALIZER;
-
 int64_t open_table(char* pathname) { return file_open_via_buffer(pathname); }
 
 int shutdown_db() { return shutdown_trx(); }
@@ -45,6 +43,8 @@ pagenum_t find_leaf(int64_t table_id, pagenum_t root_num, int64_t key) {
   return ret_num;
 }
 
+
+
 int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t* val_size,
             int trx_id) {
   trx_t* trx;
@@ -53,6 +53,7 @@ int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t* val_size,
   pagenum_t page_id;
   int header_idx;
   int page_idx;
+  int prev_idx;
   int flag;
   int key_index;
   uint16_t size;
@@ -67,10 +68,9 @@ int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t* val_size,
     return 1;
   }
 
-  LOCK(index_mutex);
   page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
-  while (!page->info.isLeaf) {
-    buffer_write_page(table_id, page_id, page_idx, 0);
+  while (!(page->info.isLeaf)) {
+    prev_idx = page_idx;
     if (key < page->branch[0].key)
       page_id = page->leftmost;
     else {
@@ -80,8 +80,8 @@ int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t* val_size,
       page_id = page->branch[i].pagenum;
     }
     page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
+    buffer_write_page(table_id, page_id, prev_idx, 0);
   }
-  UNLOCK(index_mutex);
   
   for (key_index = 0; key_index < page->info.num_keys; key_index++) {
     if (page->leafbody.slot[key_index].key == key) break;
@@ -90,12 +90,13 @@ int db_find(int64_t table_id, int64_t key, char* ret_val, uint16_t* val_size,
     buffer_write_page(table_id, page_id, page_idx, 0);
     return 1;
   }
-
   page_idx = lock_acquire(table_id, page_id, key, key_index, trx_id, SHARED, page, page_idx);
   if (page_idx == DEAD_LOCK) {
     trx_abort(trx_id);
     return 1;
   }
+  page = buffer_read_page_without_latch(page_idx);
+  
   offset = page->leafbody.slot[key_index].offset - 128;
   size = page->leafbody.slot[key_index].size;
   for (int i = offset, j = 0; i < offset + size; j++, i++)
@@ -114,6 +115,7 @@ int db_update(int64_t table_id, int64_t key, char* values,
   int header_idx;
   int page_idx;
   int key_index;
+  int prev_idx;
   pagenum_t page_id;
   trx_t* trx;
   trx_t* impl_trx;
@@ -136,10 +138,10 @@ int db_update(int64_t table_id, int64_t key, char* values,
   if (!page_id) {
     return 1;
   }
-  LOCK(index_mutex);
+
   page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
-  while (!page->info.isLeaf) {
-		buffer_write_page(table_id, page_id, page_idx, 0);
+  while (!(page->info.isLeaf)) {
+    prev_idx = page_idx;
     if (key < page->branch[0].key)
       page_id = page->leftmost;
     else {
@@ -149,8 +151,8 @@ int db_update(int64_t table_id, int64_t key, char* values,
       page_id = page->branch[i].pagenum;
     }
     page = buffer_read_page(table_id, page_id, &page_idx, WRITE);
+    buffer_write_page(table_id, page_id, prev_idx, 0);
   }
-  UNLOCK(index_mutex);
 
   for (key_index = 0; key_index < page->info.num_keys; key_index++) {
     if (page->leafbody.slot[key_index].key == key) break;
@@ -165,6 +167,7 @@ int db_update(int64_t table_id, int64_t key, char* values,
     trx_abort(trx_id);
     return 1;
   }
+  page = buffer_read_page_without_latch(page_idx);
 
   offset = page->leafbody.slot[key_index].offset - 128;
   size = page->leafbody.slot[key_index].size;
@@ -182,15 +185,15 @@ int db_update(int64_t table_id, int64_t key, char* values,
     old_img[i] = page->leafbody.value[i + offset];
     new_img[i] = values[i];
   }
-  push_update_stack(trx_id, main_log->LSN);
   push_log_to_buffer(main_log, update_log_t, old_img, new_img, 0);
 
   for (int i = offset, j = 0; i < offset + new_val_size; j++, i++)
     page->leafbody.value[i] = values[j];
   page->leafbody.slot[key_index].size = new_val_size;
-
-  undo = new undo_t;
+  
+  undo = new undo_t();
   undo->old_value = new char[size + 1];
+  undo->LSN = trx->last_LSN;
   undo->table_id = table_id;
   undo->page_id = page_id;
   undo->key = key;

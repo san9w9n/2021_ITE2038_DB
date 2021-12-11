@@ -46,6 +46,7 @@ typedef std::unordered_map<key_pair_t, entry_t*, pair_hash> lock_table_t;
 typedef struct undo_t {
   int64_t table_id;
   pagenum_t page_id;
+  LSN_t LSN;
   int64_t key;
   char* old_value;
   int16_t val_size;

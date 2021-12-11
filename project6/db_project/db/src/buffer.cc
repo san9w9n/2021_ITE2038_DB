@@ -12,6 +12,8 @@ int buf_hashFunction(int64_t table_id, pagenum_t pagenum) {
   return ret % num_bufs;
 }
 
+page_t* buffer_read_page_without_latch(int page_idx) { return frames[page_idx].page; }
+
 int find_empty_frame(int64_t table_id, pagenum_t pagenum) {
   int i, tablesize;
   tablesize = num_bufs;
@@ -275,14 +277,16 @@ page_t* buffer_read_page(int64_t table_id, pagenum_t pagenum, int* idx,
                          bool mode) {
   int hit;
   page_t* ret;
+  int flag = 0;
 
-REACQUIRE:
+RETRY:
   LOCK(buf_mutex);
   hit = hit_idx(table_id, pagenum);
   if (hit >= 0) {
     if(frames[hit].state == LOCKED) {
       UNLOCK(buf_mutex);
-      goto REACQUIRE;
+      goto RETRY;
+      return nullptr;
     }
     frames[hit].state = LOCKED;
     LOCK(frames[hit].page_mutex);
@@ -303,7 +307,8 @@ REACQUIRE:
   }
   if(frames[hit].state == LOCKED) {
     UNLOCK(buf_mutex);
-    goto REACQUIRE;
+    goto RETRY;
+    return nullptr;
   }
   frames[hit].state = LOCKED;
   LOCK(frames[hit].page_mutex);
