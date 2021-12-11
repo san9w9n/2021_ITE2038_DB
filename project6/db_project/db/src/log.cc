@@ -74,9 +74,10 @@ void push_log_to_buffer(main_log_t* main_log, update_log_t* update_log,
     valsize = update_log->valsize;
     memcpy(log_buffer + buff_pos, update_log, UPDATELOG);
     buff_pos += UPDATELOG;
-    memcpy(log_buffer + buff_pos, old_img, valsize);
-    memcpy(log_buffer + buff_pos + valsize, old_img, valsize);
-    buff_pos += 2 * valsize;
+    for(int i=0; i<valsize; i++) log_buffer[buff_pos+i] = old_img[i];
+    buff_pos += valsize;
+    for(int i=0; i<valsize; i++) log_buffer[buff_pos+i] = new_img[i];
+    buff_pos += valsize;
     if (main_log->type == COMPENSATE) {
       memcpy(log_buffer + buff_pos, &next_undo_LSN, 8);
       buff_pos += 8;
@@ -231,7 +232,7 @@ void redo(int log_num) {
         new_img = new char[valsize + 2];
         pread(logFD, new_img, valsize, LSN+MAINLOG+UPDATELOG+valsize);
 
-        for (int i = 0; i < valsize; i++)
+        for (int i = 0; i < valsize; i++) 
           page->leafbody.value[i + offset] = new_img[i];
         page->LSN = LSN;
 
@@ -351,10 +352,10 @@ void undo(int log_num) {
       new_main_log = make_main_log(trx_id, COMPENSATE, MAINLOG + UPDATELOG + (2*size) + 8, next_undo_LSN);
       new_update_log = make_update_log(table_id, page_id, size, offset+128);
       loser_trx->last_LSN = new_main_log->LSN;
-      push_log_to_buffer(new_main_log, new_update_log, old_img, new_img, next_undo_LSN);
-
-      for (int i=0; i<size; i++)
+      for (int i=0; i<size; i++)  
         page->leafbody.value[i+offset] = new_img[i];
+      push_log_to_buffer(new_main_log, new_update_log, old_img, new_img, next_undo_LSN);
+      
       page->LSN = LSN;
       fprintf(logmsgFP, "LSN %lu [UPDATE] Transaction id %d undo apply\n", LSN, trx_id);
       buffer_write_page(table_id, page_id, page_idx, 1);
