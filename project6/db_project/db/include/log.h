@@ -8,13 +8,15 @@
 #define REDO_CRASH 1
 #define UNDO_CRASH 2
 
+#define NO_CRASH -1
+
 #define BEGIN 0
 #define UPDATE 1
 #define COMMIT 2
 #define ROLLBACK 3
 #define COMPENSATE 4
-#define LOGBUFFSIZE 4096
-#define LOGTHRESHOLD 3600
+#define LOGBUFFSIZE 8192
+#define LOGTHRESHOLD 7900
 
 #define HEADERLOG 12
 #define MAINLOG 28

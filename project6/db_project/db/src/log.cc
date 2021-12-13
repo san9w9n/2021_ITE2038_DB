@@ -32,12 +32,12 @@ int init_log(int flag, int log_num, char* log_path, char* logmsg_path) {
     if (flag == REDO_CRASH) 
       redo(log_num);
     else if (flag == UNDO_CRASH) {
-      redo(-1);
+      redo(NO_CRASH);
       undo(log_num);
     }
     else {
-      redo(-1);
-      undo(-1);
+      redo(NO_CRASH);
+      undo(NO_CRASH);
     }
     log_flush();
     buffer_flush();
@@ -213,7 +213,7 @@ void redo(int log_num) {
   update_log = new update_log_t();
   fprintf(logmsgFP, "[REDO] Redo pass start\n");
   loop = 0;
-  while ((LSN < header_log->flushed_LSN) && (log_num == -1 || loop < log_num)) {
+  while ((LSN < header_log->flushed_LSN) && (log_num == NO_CRASH || loop < log_num)) {
     if (pread(logFD, main_log, MAINLOG, LSN) != MAINLOG) break;
     trx_id = main_log->trx_id;
     type = main_log->type;
@@ -306,7 +306,7 @@ void undo(int log_num) {
   main_log = new main_log_t();
   update_log = new update_log_t();
 
-  while (!priority_table.empty() && (log_num == -1 || ++loop <= log_num)) {
+  while (!priority_table.empty() && (log_num == NO_CRASH || ++loop <= log_num)) {
     LSN = priority_table.top();
     priority_table.pop();
     
