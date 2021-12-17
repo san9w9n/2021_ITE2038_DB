@@ -92,10 +92,8 @@ int give_idx() {
       ret_idx = i;
     }
     i = frames[i].nextLRU;
-    if (i < 0) break;
-  }
-  if (i < 0 && ret_idx < 0) {
-    exit(EXIT_FAILURE);
+    if (i < 0)
+      i = firstLRU;
   }
   delete_append_LRU(ret_idx);
   return ret_idx;
@@ -104,7 +102,7 @@ int give_idx() {
 int init_buffer(int num_buf) {
   if (!frames) {
     buf_mutex = PTHREAD_MUTEX_INITIALIZER;
-    if (num_buf < 50) num_buf = 50;
+    if (num_buf < 10) num_buf = 10;
     frames = (frame_t*)malloc(sizeof(frame_t) * num_buf);
     for (int i = 0; i < num_buf; i++) {
       frames[i].page = (page_t*)malloc(PGSIZE);
