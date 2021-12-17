@@ -120,16 +120,10 @@ int trx_abort(int trx_id) {
   uint16_t size;
   int64_t table_id;
   pagenum_t page_id;
-  pagenum_t root_num;
   int64_t key;
   trx_t* trx;
-  lock_t* lock;
-  lock_t* prev_lock;
   page_t* page;
-  page_t* header;
-  int header_idx;
   char* old_value;
-  trx_table_t::iterator it;
   undo_t* undo;
   main_log_t* main_log;
   update_log_t* update_log;

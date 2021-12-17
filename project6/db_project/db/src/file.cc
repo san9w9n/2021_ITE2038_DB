@@ -130,8 +130,7 @@ void file_write_page(int64_t table_id, pagenum_t pagenum, const page_t* src) {
 
 void file_close_table_files() {
   std::unordered_map<int64_t, int>::iterator it;
-  for (it = table.begin(); it != table.end(); it++) {
+  for (it = table.begin(); it != table.end(); it++)
     close(it->second);
-  }
   table.clear();
 }

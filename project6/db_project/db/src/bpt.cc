@@ -16,9 +16,8 @@ int cut(int length) {
 
 void valueCopy(char* src, page_t* dest, int16_t size, int16_t offset) {
   offset -= 128;
-  for (int i = 0, j = offset; i < size; i++, j++) {
+  for (int i = 0, j = offset; i < size; i++, j++)
     dest->leafbody.value[j] = src[i];
-  }
 }
 
 pagenum_t find_leaf(int64_t table_id, pagenum_t root_num, int64_t key) {

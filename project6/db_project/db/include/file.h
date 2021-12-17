@@ -73,4 +73,5 @@ void file_write_page(int64_t table_id, pagenum_t pagenum, const page_t* src);
 void file_close_table_files();
 int isValid_table_id(int64_t table_id);
 
+
 #endif

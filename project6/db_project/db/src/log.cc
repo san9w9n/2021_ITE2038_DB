@@ -380,9 +380,8 @@ void undo(int log_num) {
 }
 
 int shutdown_log() {
-  for (auto it = loser_trx_map.begin(); it != loser_trx_map.end(); it++) {
+  for (auto it = loser_trx_map.begin(); it != loser_trx_map.end(); it++)
     delete it->second;
-  }
   delete header_log;
   close(logFD);
   fclose(logmsgFP);

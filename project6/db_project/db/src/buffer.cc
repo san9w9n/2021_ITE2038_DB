@@ -18,9 +18,8 @@ int find_empty_frame(int64_t table_id, pagenum_t pagenum) {
   int i, tablesize;
   tablesize = num_bufs;
   i = buf_hashFunction(table_id, pagenum);
-  while (frames[i].is_buf) {
+  while (frames[i].is_buf)
     i = (i + 1) % tablesize;
-  }
   append_LRU(i);
   return i;
 }

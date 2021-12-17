@@ -19,7 +19,6 @@ typedef struct pair_hash {
   }
 } pair_hash;
 typedef std::pair<int64_t, pagenum_t> key_pair_t;
-
 typedef struct entry_t entry_t;
 
 typedef struct lock_t {

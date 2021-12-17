@@ -70,4 +70,5 @@ int shutdown_log();
 void redo(int log_num);
 void undo(int log_num);
 
+
 #endif

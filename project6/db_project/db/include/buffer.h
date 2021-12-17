@@ -47,4 +47,5 @@ page_t* buffer_read_page(int64_t table_id, pagenum_t pagenum, int* idx, bool mod
 void buffer_write_page(int64_t table_id, pagenum_t pagenum, int32_t idx, bool success);
 int shutdown_buffer();
 
+
 #endif
