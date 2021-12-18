@@ -101,7 +101,7 @@ int give_idx() {
 int init_buffer(int num_buf) {
   if (!frames) {
     buf_mutex = PTHREAD_MUTEX_INITIALIZER;
-    if (num_buf < 20) num_buf = 20;
+    if (num_buf < 8) num_buf = 8;
     frames = (frame_t*)malloc(sizeof(frame_t) * num_buf);
     for (int i = 0; i < num_buf; i++) {
       frames[i].page = (page_t*)malloc(PGSIZE);
