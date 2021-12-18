@@ -101,7 +101,7 @@ int give_idx() {
 int init_buffer(int num_buf) {
   if (!frames) {
     buf_mutex = PTHREAD_MUTEX_INITIALIZER;
-    if (num_buf < 8) num_buf = 8;
+    if (num_buf < 3) num_buf = 3;
     frames = (frame_t*)malloc(sizeof(frame_t) * num_buf);
     for (int i = 0; i < num_buf; i++) {
       frames[i].page = (page_t*)malloc(PGSIZE);
@@ -323,8 +323,8 @@ RETRY:
 void buffer_write_page(int64_t table_id, pagenum_t pagenum, int32_t idx,
                        bool success) {
   if (success) frames[idx].is_dirty = 1;
-  frames[idx].state = UNLOCKED;
   UNLOCK(frames[idx].page_mutex);
+  frames[idx].state = UNLOCKED;
 }
 
 void buffer_flush()
