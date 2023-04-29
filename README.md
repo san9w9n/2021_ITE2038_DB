@@ -1,5 +1,5 @@
 # 2021_ITE2038_DB
-2021 Database System, (Prof. Hyungsoo Jung)
+2021 Database System
 
 Please check the wiki.
 
